@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { onAuthChange } from '../firebase/auth';
+import { onAuthChange, auth, logout } from '../firebase/auth'; // auth'u burada import edin
 import { collection, query, where, getDocs, setDoc, doc } from "firebase/firestore";
 import { db } from '../firebase/config';
 import { onIdTokenChanged } from 'firebase/auth';
@@ -23,8 +23,6 @@ export function AuthProvider({ children }) {
       if (user) {
         // E-posta doğrulanmış mı kontrol et
         if (!user.emailVerified) {
-          // Kullanıcıyı doğrulama sayfasına yönlendirebilirsiniz
-          // veya kısıtlı bir görünüm sunabilirsiniz
           setEmailVerified(false);
         } else {
           setEmailVerified(true);
@@ -45,17 +43,15 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
+  // Token değişikliklerini dinle
   useEffect(() => {
-    // Token değişikliklerini dinle
+    if (!auth) return; // auth yoksa çalışma
+    
     const unsubscribeToken = onIdTokenChanged(auth, async (user) => {
       if (user) {
         try {
-          // Token yenilendiğinde
           const token = await user.getIdToken();
           console.log("Token yenilendi");
-          
-          // Burada API istekleriniz için token'ı ayarlayabilirsiniz
-          // Örneğin: AsyncStorage.setItem('userToken', token);
         } catch (error) {
           console.error("Token yenileme hatası:", error);
         }
@@ -65,12 +61,13 @@ export function AuthProvider({ children }) {
     return () => unsubscribeToken();
   }, []);
 
-  useEffect(() => {
-    loadCachedUserData();
-  }, []);
-
+  // Kullanıcı verilerini yükleme
   const fetchAndUpdateUserData = async (user) => {
     try {
+      // Önce önbellekten yükle
+      await loadCachedUserData();
+      
+      // Sonra Firestore'dan güncelle
       const usersRef = collection(db, "Kullanicilar");
       const q = query(usersRef, where("eposta", "==", user.email));
       const querySnapshot = await getDocs(q);
@@ -91,6 +88,7 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // Önbellekten yükle
   const loadCachedUserData = async () => {
     try {
       const cachedData = await AsyncStorage.getItem('userData');
@@ -105,6 +103,8 @@ export function AuthProvider({ children }) {
   };
 
   const updateUserData = async (newData) => {
+    if (!currentUser) return false;
+    
     try {
       // Firestore'da güncelleme
       await setDoc(doc(db, "Kullanicilar", currentUser.uid), newData, { merge: true });
@@ -129,7 +129,8 @@ export function AuthProvider({ children }) {
     isAdmin,
     loading,
     emailVerified,
-    updateUserData
+    updateUserData,
+    logout  // logout fonksiyonunu buradan erişilebilir yapın
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

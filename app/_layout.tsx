@@ -1,15 +1,12 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import 'react-native-reanimated';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { View, ActivityIndicator, useColorScheme } from 'react-native';
+import { Slot, useRouter, useSegments, Stack } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import { View, ActivityIndicator } from 'react-native';
-
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { useFonts } from 'expo-font';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import 'react-native-reanimated';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -40,8 +37,9 @@ function AuthWrapper({ children }) {
     const currentPath = '/' + segments.join('/');
     
     if (!currentUser) {
-      // Kullanıcı giriş yapmamışsa ve korunmuş bir sayfada ise
+      // Kullanıcı giriş yapmamışsa ve korunmuş bir sayfada ise, login'e yönlendir
       if (!isPublicPage(currentPath)) {
+        console.log("Yetkisiz erişim, login'e yönlendiriliyor");
         router.replace('/login');
       }
     } else {
@@ -49,11 +47,13 @@ function AuthWrapper({ children }) {
       
       // Admin sayfalarını koruma
       if (isAdminPage(currentPath) && !isAdmin) {
+        console.log("Admin yetkisi yok, ana sayfaya yönlendiriliyor");
         router.replace('/home');
       }
       
-      // Kullanıcı giriş yapmış ve auth sayfalarındaysa
+      // Kullanıcı giriş yapmış ve auth sayfalarındaysa ana sayfaya yönlendir
       if (isPublicPage(currentPath)) {
+        console.log("Zaten giriş yapılmış, ana sayfaya yönlendiriliyor");
         router.replace('/home');
       }
     }
@@ -65,6 +65,15 @@ function AuthWrapper({ children }) {
   }
 
   return children;
+}
+
+// Simple loading screen
+function LoadingScreen() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+      <ActivityIndicator size="large" color="#E6A05F" />
+    </View>
+  );
 }
 
 // Root layout
@@ -120,17 +129,7 @@ export default function RootLayout() {
           </Stack>
           <StatusBar style="auto" />
         </ThemeProvider>
-        <Slot />
       </AuthWrapper>
     </AuthProvider>
-  );
-}
-
-// Basit bir loading ekranı
-function LoadingScreen() {
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <ActivityIndicator size="large" color="#E6A05F" />
-    </View>
   );
 }
