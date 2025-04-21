@@ -1,17 +1,80 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, TextInput } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Svg, Path, Rect } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+// Import our custom modules
+import { registerUser } from '../firebase/auth';
+import { createUserDocument, logUserAction } from '../firebase/firestore';
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState('');
-  const [companyName, setCompanyName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
+  const handleRegister = async () => {
+    // Validate inputs
+    if (!fullName || !phoneNumber || !email || !password || !confirmPassword) {
+      Alert.alert("Hata", "Lütfen tüm alanları doldurunuz.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert("Hata", "Şifreler eşleşmiyor.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Register with Firebase Authentication
+      const user = await registerUser(email, password);
+      
+      // Ad ve soyadı ayırmak için basit bir mantık (boşluktan böl)
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      // Add user data to Firestore using our helper function
+      const userDocRef = await createUserDocument({
+        isim: firstName,
+        soyisim: lastName,
+        eposta: email,
+        telefon: phoneNumber,
+        is_unvani: "",
+        firma_id: "ornek_firma",
+        yetki_id: ""
+      });
+      
+      // Log the action using our helper function
+      await logUserAction(userDocRef.id, "Kullanıcı kaydı");
+
+      // Redirect to verification page
+      router.push('/verification');
+      
+    } catch (error) {
+      // Handle errors
+      let errorMessage = "Kayıt sırasında bir hata oluştu.";
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 'auth/email-already-in-use') {
+          errorMessage = "Bu e-posta adresi zaten kullanılıyor.";
+        } else if (error.code === 'auth/invalid-email') {
+          errorMessage = "Geçersiz e-posta formatı.";
+        } else if (error.code === 'auth/weak-password') {
+          errorMessage = "Şifre çok zayıf.";
+        }
+      }
+      Alert.alert("Hata", errorMessage);
+      console.error("Registration error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // JSX return kısmı değişmedi
   return (
     <SafeAreaView style={styles.container}>
       {/* Back button */}
@@ -62,14 +125,6 @@ export default function RegisterScreen() {
           onChangeText={setFullName}
         />
         
-        <TextInput
-          style={styles.input}
-          placeholder="Firma Ünvanı"
-          placeholderTextColor="#AAAAAA"
-          value={companyName}
-          onChangeText={setCompanyName}
-        />
-        
         <View style={styles.phoneContainer}>
           <View style={styles.countryCode}>
             <Text style={styles.countryCodeText}>+90</Text>
@@ -89,6 +144,7 @@ export default function RegisterScreen() {
           placeholder="E-posta adresinizi girin"
           placeholderTextColor="#AAAAAA"
           keyboardType="email-address"
+          autoCapitalize="none"
           value={email}
           onChangeText={setEmail}
         />
@@ -113,8 +169,16 @@ export default function RegisterScreen() {
       </View>
       
       {/* Register button */}
-      <TouchableOpacity style={styles.registerButton}>
-        <Text style={styles.registerButtonText}>Üye Ol</Text>
+      <TouchableOpacity 
+        style={styles.registerButton}
+        onPress={handleRegister}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={styles.registerButtonText}>Üye Ol</Text>
+        )}
       </TouchableOpacity>
       
       {/* Login link */}
@@ -130,6 +194,7 @@ export default function RegisterScreen() {
   );
 }
 
+// Mevcut stiller korundu
 const styles = StyleSheet.create({
   container: {
     flex: 1,

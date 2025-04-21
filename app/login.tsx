@@ -1,32 +1,84 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, TextInput, TouchableWithoutFeedback } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, 
+         SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { Svg, Path, Rect } from 'react-native-svg';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; 
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { loginWithEmail } from '../firebase/auth';
 
 export default function LoginScreen() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const params = useLocalSearchParams();
-  const userType = params.userType as string || 'user';
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    // In a real app, you would validate credentials here
-    if (userType === 'admin') {
-      router.replace('./admin-home');
-    } else {
-      router.replace('./home');
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Hata", "E-posta ve şifre alanları boş olamaz.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Call our custom login function that checks user role
+      const { user, userData, isAdmin } = await loginWithEmail(email, password);
+      
+      // Check if email is verified (optional)
+      if (!user.emailVerified) {
+        Alert.alert(
+          "E-posta Doğrulanmadı", 
+          "Lütfen e-posta adresinize gönderilen doğrulama linkini kullanarak hesabınızı doğrulayın.",
+          [
+            { text: "Tamam" },
+            { 
+              text: "Yeniden Gönder", 
+              onPress: () => {
+                // Implement resend verification email functionality here
+                console.log("Resend verification");
+              }
+            }
+          ]
+        );
+        setLoading(false);
+        return;
+      }
+      
+      // Log user role information
+      console.log("User login successful:", user.email);
+      console.log("User role:", isAdmin ? "Admin" : "Normal User");
+      
+      // Redirect based on user role
+      if (isAdmin) {
+        router.replace('/admin-home');
+      } else {
+        router.replace('/home');
+      }
+
+    } catch (error) {
+      // Handle login errors
+      let errorMessage = "Giriş sırasında bir hata oluştu.";
+      
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 'auth/invalid-email') {
+          errorMessage = "Geçersiz e-posta formatı.";
+        } else if (error.code === 'auth/user-disabled') {
+          errorMessage = "Bu kullanıcı hesabı devre dışı bırakıldı.";
+        } else if (error.code === 'auth/user-not-found') {
+          errorMessage = "Bu e-posta adresi ile kayıtlı bir kullanıcı bulunamadı.";
+        } else if (error.code === 'auth/wrong-password') {
+          errorMessage = "Yanlış şifre girdiniz.";
+        }
+      }
+      
+      Alert.alert("Giriş Hatası", errorMessage);
+      console.error("Login error:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Back button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color="#222222" />
-      </TouchableOpacity>
-
       {/* Logo */}
       <View style={styles.logoContainer}>
         <Svg width="100" height="100" viewBox="0 0 120 120" fill="none">
@@ -46,7 +98,6 @@ export default function LoginScreen() {
             stroke="#E6A05F"
             strokeWidth="4"
           />
-          {/* Window detail at bottom center */}
           <Rect x="50" y="70" width="8" height="8" fill="#E6A05F" />
           <Rect x="62" y="70" width="8" height="8" fill="#E6A05F" />
           <Rect x="50" y="82" width="8" height="8" fill="#E6A05F" />
@@ -58,70 +109,56 @@ export default function LoginScreen() {
       </View>
 
       {/* Title */}
-      <Text style={styles.title}>
-        {userType === 'admin' ? 'Admin Giriş' : 'Kullanıcı Giriş'}
-      </Text>
+      <Text style={styles.title}>Giriş Yap</Text>
       
       {/* Input fields */}
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
-          placeholder="Kullanıcı No"
+          placeholder="E-posta"
           placeholderTextColor="#AAAAAA"
-          value={username}
-          onChangeText={setUsername}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
         />
         
-        <View style={styles.passwordContainer}>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="Şifre"
-            placeholderTextColor="#AAAAAA"
-            secureTextEntry={!passwordVisible}
-            value={password}
-            onChangeText={setPassword}
-          />
-          <TouchableOpacity 
-            style={styles.eyeIcon} 
-            onPress={() => setPasswordVisible(!passwordVisible)}
-          >
-            <Ionicons 
-              name={passwordVisible ? "eye-off" : "eye-off-outline"} 
-              size={20} 
-              color="#AAAAAA" 
-            />
-          </TouchableOpacity>
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.forgotPassword}
-          onPress={() => router.push('/forgot-password')}
-        >
-          <Text style={styles.forgotPasswordText}>Şifremi unuttum</Text>
-        </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          placeholder="Şifre"
+          placeholderTextColor="#AAAAAA"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
       </View>
+      
+      {/* Forgot password */}
+      <TouchableOpacity style={styles.forgotPassword} onPress={() => router.push('/forgot-password')}>
+        <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+      </TouchableOpacity>
       
       {/* Login button */}
       <TouchableOpacity 
         style={styles.loginButton}
         onPress={handleLogin}
+        disabled={loading}
       >
-        <Text style={styles.loginButtonText}>Giriş yap</Text>
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={styles.loginButtonText}>Giriş Yap</Text>
+        )}
       </TouchableOpacity>
       
       {/* Register link */}
       <TouchableOpacity 
-        style={styles.registerLinkContainer} 
+        style={styles.registerLinkContainer}
         onPress={() => router.push('/register')}
       >
         <Text style={styles.registerLinkText}>
           Hesabın yok mu? <Text style={styles.registerLinkBold}>Üye Ol</Text>
         </Text>
-      </TouchableOpacity>
-      
-      {/* Fingerprint icon */}
-      <TouchableOpacity style={styles.fingerprintContainer}>
-        <Ionicons name="finger-print-outline" size={36} color="#888888" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -132,16 +169,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     padding: 20,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
+    justifyContent: 'center',
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: 80,
+    marginBottom: 40,
   },
   logoText: {
     fontSize: 28,
@@ -159,12 +191,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#222222',
     textAlign: 'center',
-    marginTop: 30,
-    marginBottom: 30,
+    marginBottom: 25,
   },
   inputContainer: {
     width: '100%',
-    marginBottom: 30,
+    marginBottom: 20,
   },
   input: {
     backgroundColor: '#FFFFFF',
@@ -172,34 +203,16 @@ const styles = StyleSheet.create({
     borderColor: '#DDDDDD',
     borderRadius: 8,
     height: 50,
-    paddingHorizontal: 15,
     marginBottom: 15,
-    fontSize: 16,
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#DDDDDD',
-    borderRadius: 8,
-    height: 50,
-    marginBottom: 5,
-  },
-  passwordInput: {
-    flex: 1,
-    height: 50,
     paddingHorizontal: 15,
     fontSize: 16,
-  },
-  eyeIcon: {
-    paddingHorizontal: 15,
   },
   forgotPassword: {
-    alignSelf: 'flex-end',
-    marginTop: 5,
+    alignItems: 'flex-end',
+    marginBottom: 25,
   },
   forgotPasswordText: {
-    color: '#888888',
+    color: '#E6A05F',
     fontSize: 14,
   },
   loginButton: {
@@ -208,7 +221,7 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 15,
   },
   loginButtonText: {
     color: '#FFFFFF',
@@ -217,7 +230,7 @@ const styles = StyleSheet.create({
   },
   registerLinkContainer: {
     alignItems: 'center',
-    marginBottom: 15,
+    marginTop: 15,
   },
   registerLinkText: {
     color: '#555555',
@@ -226,10 +239,5 @@ const styles = StyleSheet.create({
   registerLinkBold: {
     fontWeight: 'bold',
     color: '#333333',
-  },
-  fingerprintContainer: {
-    alignItems: 'center',
-    marginTop: 'auto',
-    marginBottom: 40,
   },
 });

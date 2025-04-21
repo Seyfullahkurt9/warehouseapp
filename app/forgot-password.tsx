@@ -6,35 +6,54 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   TextInput, 
-  StatusBar 
+  StatusBar,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Svg, Path, Rect } from 'react-native-svg';
+import { resetPassword } from '../firebase/auth';
 
 export default function ForgotPasswordScreen() {
-  const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
-  const handleSendCode = () => {
-    // In a real app, this would send a verification code to the email
-    if (userId && email) {
-      setCodeSent(true);
-      // Here you would call an API to send the actual code
-    } else {
-      alert('Lütfen kullanıcı no ve e-posta adresinizi girin.');
+  const handleResetPassword = async () => {
+    if (!email) {
+      Alert.alert("Hata", "Lütfen e-posta adresinizi girin.");
+      return;
     }
-  };
 
-  const handleContinue = () => {
-    // In a real app, this would validate the code and proceed to password reset
-    if (code) {
-      // Here you would call an API to verify the code
-      router.push('/reset-password'); // This would be a new screen for setting a new password
-    } else {
-      alert('Lütfen kodu girin.');
+    setLoading(true);
+    
+    try {
+      // Firebase auth modülündeki resetPassword fonksiyonunu çağır
+      await resetPassword(email);
+      
+      // Başarılı olduğunda
+      setEmailSent(true);
+      Alert.alert(
+        "Bağlantı Gönderildi", 
+        "Şifre sıfırlama bağlantısı e-posta adresinize gönderildi. Lütfen e-postanızı kontrol edin."
+      );
+    } catch (error) {
+      // Hata durumunu yönet
+      let errorMessage = "Şifre sıfırlama bağlantısı gönderilemedi.";
+      
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 'auth/invalid-email') {
+          errorMessage = "Geçersiz e-posta formatı.";
+        } else if (error.code === 'auth/user-not-found') {
+          errorMessage = "Bu e-posta ile kayıtlı bir kullanıcı bulunamadı.";
+        }
+      }
+      
+      Alert.alert("Hata", errorMessage);
+      console.error("Password reset error:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,53 +101,57 @@ export default function ForgotPasswordScreen() {
 
         {/* Form */}
         <View style={styles.formContainer}>
-          <Text style={styles.instructionText}>
-            Yeni şifreyi almak için e-posta adresinizi girin
-          </Text>
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Kullanıcı No"
-            placeholderTextColor="#AAAAAA"
-            value={userId}
-            onChangeText={setUserId}
-            keyboardType="numeric"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="E-posta adresinizi girin"
-            placeholderTextColor="#AAAAAA"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          
-          <TouchableOpacity 
-            style={styles.sendCodeLink}
-            onPress={handleSendCode}
-          >
-            <Text style={styles.sendCodeText}>Kod gönder</Text>
-          </TouchableOpacity>
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Kodu gir"
-            placeholderTextColor="#AAAAAA"
-            value={code}
-            onChangeText={setCode}
-            keyboardType="numeric"
-          />
+          {emailSent ? (
+            // Bağlantı gönderildikten sonraki görünüm
+            <View style={styles.successContainer}>
+              <Ionicons name="mail" size={60} color="#E6A05F" />
+              <Text style={styles.successTitle}>E-posta Gönderildi</Text>
+              <Text style={styles.successMessage}>
+                Şifre sıfırlama bağlantısı e-posta adresinize gönderildi. Lütfen e-postanızı kontrol ediniz 
+                ve bağlantıya tıklayarak şifrenizi sıfırlayınız.
+              </Text>
+            </View>
+          ) : (
+            // Bağlantı gönderilmeden önceki form
+            <>
+              <Text style={styles.instructionText}>
+                Şifrenizi sıfırlamak için e-posta adresinizi girin. Size bir sıfırlama bağlantısı göndereceğiz.
+              </Text>
+              
+              <TextInput
+                style={styles.input}
+                placeholder="E-posta adresinizi girin"
+                placeholderTextColor="#AAAAAA"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </>
+          )}
         </View>
 
-        {/* Continue Button */}
-        <TouchableOpacity 
-          style={styles.continueButton}
-          onPress={handleContinue}
-        >
-          <Text style={styles.continueButtonText}>Devam et</Text>
-        </TouchableOpacity>
+        {/* Buttons */}
+        {emailSent ? (
+          <TouchableOpacity 
+            style={styles.continueButton}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.continueButtonText}>Giriş Sayfasına Dön</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity 
+            style={styles.continueButton}
+            onPress={handleResetPassword}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.continueButtonText}>Şifre Sıfırlama Bağlantısı Gönder</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -176,12 +199,13 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     marginBottom: 30,
+    flex: 1,
   },
   instructionText: {
     fontSize: 16,
-    fontWeight: 'bold',
     color: '#222222',
     marginBottom: 20,
+    textAlign: 'center',
   },
   input: {
     backgroundColor: '#FFFFFF',
@@ -192,15 +216,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     marginBottom: 15,
     fontSize: 16,
-  },
-  sendCodeLink: {
-    alignSelf: 'flex-end',
-    marginTop: -5,
-    marginBottom: 15,
-  },
-  sendCodeText: {
-    color: '#888888',
-    fontSize: 14,
   },
   continueButton: {
     backgroundColor: '#E6A05F',
@@ -214,5 +229,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#222222',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  successMessage: {
+    fontSize: 16,
+    color: '#555555',
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });
