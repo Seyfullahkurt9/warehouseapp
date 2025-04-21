@@ -39,6 +39,7 @@ export default function RegisterScreen() {
       const lastName = nameParts.slice(1).join(' ') || '';
       
       // Add user data to Firestore using our helper function
+      // Auth UID'sini Firestore'a geçir
       const userDocRef = await createUserDocument({
         isim: firstName,
         soyisim: lastName,
@@ -47,10 +48,10 @@ export default function RegisterScreen() {
         is_unvani: "",
         firma_id: "ornek_firma",
         yetki_id: ""
-      });
+      }, user.uid);  // Auth UID'sini burada kullan
       
       // Log the action using our helper function
-      await logUserAction(userDocRef.id, "Kullanıcı kaydı");
+      await logUserAction(user.uid, "Kullanıcı kaydı");
 
       // Redirect to verification page
       router.push('/verification');

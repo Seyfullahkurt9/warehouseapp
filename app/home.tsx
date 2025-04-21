@@ -2,8 +2,21 @@ import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { logout } from '../firebase/auth';
 
 export default function UserHomeScreen() {
+  const { isAdmin, currentUser } = useAuth();
+  
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace('/login');
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+  
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -16,7 +29,7 @@ export default function UserHomeScreen() {
               <Feather name="bell" size={24} color="#666666" />
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.iconButton}>
+            <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
               <Feather name="power" size={24} color="#666666" />
             </TouchableOpacity>
           </View>
@@ -71,16 +84,18 @@ export default function UserHomeScreen() {
           </View>
         </View>
         
-        {/* Admin Button in bottom left corner */}
-        <TouchableOpacity 
-          style={styles.adminCornerButton}
-          onPress={() => router.push('/admin-home')}
-        >
-          <View style={styles.adminButtonContent}>
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-            <Text style={styles.adminButtonText}>Admin Panel</Text>
-          </View>
-        </TouchableOpacity>
+        {/* Admin Button - only show if user is admin */}
+        {isAdmin && (
+          <TouchableOpacity 
+            style={styles.adminCornerButton}
+            onPress={() => router.push('/admin-home')}
+          >
+            <View style={styles.adminButtonContent}>
+              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              <Text style={styles.adminButtonText}>Admin Panel</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
 
       {/* Bottom Tab Navigation */}

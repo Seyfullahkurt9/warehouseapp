@@ -1,5 +1,7 @@
 import { 
   getAuth, 
+  initializeAuth,
+  getReactNativePersistence,
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   sendEmailVerification,
@@ -10,9 +12,12 @@ import {
 import { app } from './config';
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Initialize Firebase Auth
-const auth = getAuth(app);
+// Initialize Firebase Auth with persistence
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
 
 // Register a new user
 export const registerUser = async (email, password) => {

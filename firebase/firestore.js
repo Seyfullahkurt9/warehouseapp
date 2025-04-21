@@ -1,15 +1,17 @@
-import { collection, addDoc, getDoc, query, where, getDocs, updateDoc, doc, Timestamp, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, doc, setDoc, Timestamp } from "firebase/firestore";
 import { db } from './config';
 
-// User related operations
-export const createUserDocument = async (userData) => {
+// User related operations - kullanıcının auth uid'sini kullan
+export const createUserDocument = async (userData, authUid) => {
   try {
-    const userDocRef = await addDoc(collection(db, "Kullanicilar"), {
+    // addDoc yerine setDoc kullanarak, Firebase Auth ID'si ile eşleştir
+    await setDoc(doc(db, "Kullanicilar", authUid), {
       ...userData,
       createdAt: Timestamp.now()
     });
-    return userDocRef;
+    return doc(db, "Kullanicilar", authUid);
   } catch (error) {
+    console.error("Error creating user document:", error);
     throw error;
   }
 };
