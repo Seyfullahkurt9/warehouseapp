@@ -116,6 +116,9 @@ export default function RootLayout() {
             <Stack.Screen name="suppliers" />
             <Stack.Screen name="add-supplier" />
             <Stack.Screen name="supplier-success" />
+            <Stack.Screen name="customers" />
+            <Stack.Screen name="add-customer" />
+            <Stack.Screen name="customer-success" />
             <Stack.Screen name="forgot-password" />
             <Stack.Screen name="reset-password" />
             <Stack.Screen name="password-success" />

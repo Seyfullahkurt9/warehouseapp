@@ -16,8 +16,8 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 
-// Tedarikçi tipi tanımı
-interface Supplier {
+// Müşteri tipi tanımı
+interface Customer {
   id: string;
   sirket_ismi: string;
   adres: string;
@@ -26,54 +26,41 @@ interface Supplier {
   firma_id: string;
 }
 
-export default function SuppliersScreen() {
-  const { userData, currentUser, fetchUserData } = useAuth();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+export default function CustomersScreen() {
+  const { userData, currentUser } = useAuth();
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Profil sayfasından çağrıldı mı kontrolü
   const [isRetry, setIsRetry] = useState(false);
 
   useEffect(() => {
-    const fetchSuppliers = async () => {
+    const fetchCustomers = async () => {
       try {
         if (!userData || !userData.firma_id) {
-          // Bir kez daha kullanıcı verilerini yüklemeyi dene
-          if (!isRetry && currentUser) {
-            console.log("Kullanıcı firma bilgisi yok, yeniden yükleniyor...");
-            setIsRetry(true);
-            const success = await fetchUserData(currentUser);
-            if (!success) {
-              setError("Kullanıcı firma bilgisi bulunamadı. Lütfen çıkış yapıp tekrar giriş yapınız.");
-            }
-            setLoading(false);
-            return;
-          }
-          
+          // Kullanıcı firma bilgisi eksikse hata göster
           setError("Kullanıcı firma bilgisi bulunamadı");
           setLoading(false);
           return;
         }
 
-        // Kullanıcının firma_id'si ile eşleşen tedarikçileri getir
-        const suppliersRef = collection(db, "Tedarikciler");
-        const q = query(suppliersRef, where("firma_id", "==", userData.firma_id));
+        // Kullanıcının firma_id'si ile eşleşen müşterileri getir
+        const customersRef = collection(db, "Musteriler");
+        const q = query(customersRef, where("firma_id", "==", userData.firma_id));
         const querySnapshot = await getDocs(q);
 
-        const suppliersList: Supplier[] = [];
+        const customersList: Customer[] = [];
         querySnapshot.forEach((doc) => {
-          suppliersList.push({
+          customersList.push({
             id: doc.id,
             ...doc.data()
-          } as Supplier);
+          } as Customer);
         });
 
-        setSuppliers(suppliersList);
+        setCustomers(customersList);
         setLoading(false);
 
       } catch (error) {
-        console.error("Tedarikçiler yüklenirken hata:", error);
+        console.error("Müşteriler yüklenirken hata:", error);
         
         // Error tipinin kontrol edilmesi
         let errorMessage = "Bilinmeyen hata";
@@ -83,28 +70,28 @@ export default function SuppliersScreen() {
           errorMessage = error;
         }
         
-        setError("Tedarikçiler yüklenemedi: " + errorMessage);
+        setError("Müşteriler yüklenemedi: " + errorMessage);
         setLoading(false);
       }
     };
 
-    fetchSuppliers();
-  }, [userData?.firma_id, isRetry, currentUser, fetchUserData]);
+    fetchCustomers();
+  }, [userData?.firma_id]);
 
-  const handleAddSupplier = () => {
+  const handleAddCustomer = () => {
     if (!userData || !userData.firma_id) {
-      Alert.alert("Hata", "Tedarikçi ekleyebilmek için bir firmaya bağlı olmalısınız.");
+      Alert.alert("Hata", "Müşteri ekleyebilmek için bir firmaya bağlı olmalısınız.");
       return;
     }
 
-    router.push('/add-supplier');
+    router.push('/add-customer');
   };
 
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color="#E6A05F" />
-        <Text style={styles.loadingText}>Tedarikçiler yükleniyor...</Text>
+        <Text style={styles.loadingText}>Müşteriler yükleniyor...</Text>
       </View>
     );
   }
@@ -130,7 +117,7 @@ export default function SuppliersScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#222222" />
           </TouchableOpacity>
-          <Text style={styles.screenTitle}>Tedarikçiler</Text>
+          <Text style={styles.screenTitle}>Müşteriler</Text>
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.iconButton}>
               <Feather name="search" size={22} color="#666666" />
@@ -154,19 +141,19 @@ export default function SuppliersScreen() {
           <Text style={[styles.columnHeader, styles.detailsColumn]}>Detay</Text>
         </View>
 
-        {suppliers.length === 0 ? (
+        {customers.length === 0 ? (
           <View style={styles.emptyState}>
             <Feather name="inbox" size={40} color="#CCCCCC" />
-            <Text style={styles.emptyText}>Henüz tedarikçi bulunmuyor</Text>
-            <Text style={styles.emptySubText}>Tedarikçi eklemek için aşağıdaki butonu kullanabilirsiniz</Text>
+            <Text style={styles.emptyText}>Henüz müşteri bulunmuyor</Text>
+            <Text style={styles.emptySubText}>Müşteri eklemek için aşağıdaki butonu kullanabilirsiniz</Text>
           </View>
         ) : (
           <FlatList
-            data={suppliers}
+            data={customers}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.supplierItem}>
-                <Text style={[styles.supplierName, styles.companyColumn]} numberOfLines={1} ellipsizeMode="tail">{item.sirket_ismi}</Text>
+              <View style={styles.customerItem}>
+                <Text style={[styles.customerName, styles.companyColumn]} numberOfLines={1} ellipsizeMode="tail">{item.sirket_ismi}</Text>
                 <View style={[styles.contactInfo, styles.contactColumn]}>
                   <Text style={styles.contactText} numberOfLines={1} ellipsizeMode="tail">{item.telefon}</Text>
                 </View>
@@ -185,7 +172,7 @@ export default function SuppliersScreen() {
             )}
             contentContainerStyle={[
               styles.listContainer,
-              suppliers.length === 0 && styles.emptyListContainer
+              customers.length === 0 && styles.emptyListContainer
             ]}
           />
         )}
@@ -193,7 +180,7 @@ export default function SuppliersScreen() {
         {/* Floating Action Button */}
         <TouchableOpacity 
           style={styles.fab}
-          onPress={handleAddSupplier}
+          onPress={handleAddCustomer}
         >
           <Ionicons name="add" size={30} color="#FFFFFF" />
         </TouchableOpacity>
@@ -359,7 +346,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 40,
   },
-  supplierItem: {
+  customerItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -368,7 +355,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  supplierName: {
+  customerName: {
     fontSize: 15,
     color: '#333333',
     fontWeight: '500',

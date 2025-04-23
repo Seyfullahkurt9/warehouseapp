@@ -18,10 +18,9 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
-import { FirebaseError } from 'firebase/app';
 
-// Tedarikçi için tip tanımı güncellendi - kaldırılan alanlar çıkarıldı
-interface SupplierData {
+// Müşteri için tip tanımı
+interface CustomerData {
   sirket_ismi: string;
   adres: string;
   telefon: string;
@@ -29,12 +28,11 @@ interface SupplierData {
   firma_id: string;
 }
 
-export default function AddSupplierScreen() {
+export default function AddCustomerScreen() {
   const { userData, currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   
-  // supplierData state'i güncellendi - kaldırılan alanlar çıkarıldı
-  const [supplierData, setSupplierData] = useState<SupplierData>({
+  const [customerData, setCustomerData] = useState<CustomerData>({
     sirket_ismi: '',
     adres: '',
     telefon: '',
@@ -42,24 +40,22 @@ export default function AddSupplierScreen() {
     firma_id: userData?.firma_id || '',
   });
 
-  const handleChange = (field: keyof SupplierData, value: string) => {
-    setSupplierData({
-      ...supplierData,
+  const handleChange = (field: keyof CustomerData, value: string) => {
+    setCustomerData({
+      ...customerData,
       [field]: value
     });
   };
 
   const validateForm = () => {
-    // Zorunlu alanları kontrol et - kod alanı kaldırıldı
-    if (!supplierData.sirket_ismi.trim()) {
+    if (!customerData.sirket_ismi.trim()) {
       Alert.alert("Uyarı", "Firma unvanı zorunludur.");
       return false;
     }
     
-    // E-posta formatını kontrol et (eğer girilmişse)
-    if (supplierData.eposta) {
+    if (customerData.eposta) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(supplierData.eposta)) {
+      if (!emailRegex.test(customerData.eposta)) {
         Alert.alert("Uyarı", "Geçerli bir e-posta adresi giriniz.");
         return false;
       }
@@ -68,55 +64,56 @@ export default function AddSupplierScreen() {
     return true;
   };
 
-  const handleAddSupplier = async () => {
-    // Form doğrulama
+  const handleAddCustomer = async () => {
     if (!validateForm()) return;
     
-    // Kullanıcının bir firmaya bağlı olup olmadığını kontrol et
     if (!userData?.firma_id) {
-      Alert.alert("Hata", "Tedarikçi eklemek için bir firmaya bağlı olmalısınız. Çıkış yapıp tekrar giriş yapmanız gerekebilir.");
+      Alert.alert("Hata", "Müşteri eklemek için bir firmaya bağlı olmalısınız.");
       return;
     }
     
     setLoading(true);
     
     try {
-      // Firestore'a tedarikçi ekle
-      const tedarikciRef = collection(db, "Tedarikciler");
+      const musterilerRef = collection(db, "Musteriler");
       
-      const newSupplier = {
-        sirket_ismi: supplierData.sirket_ismi,
-        adres: supplierData.adres,
-        telefon: supplierData.telefon,
-        eposta: supplierData.eposta,
+      const newCustomer = {
+        sirket_ismi: customerData.sirket_ismi,
+        adres: customerData.adres,
+        telefon: customerData.telefon,
+        eposta: customerData.eposta,
         firma_id: userData.firma_id,
         ekleyen_kullanici: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı',
         ekleyen_kullanici_id: currentUser?.uid || '',
         eklenme_tarihi: new Date()
       };
       
-      // Yetki hatasını yakalayabilmek için daha detaylı hata işleme
       try {
-        const docRef = await addDoc(tedarikciRef, newSupplier);
-        console.log("Tedarikçi eklendi, ID:", docRef.id);
+        const docRef = await addDoc(musterilerRef, newCustomer);
+        console.log("Müşteri eklendi, ID:", docRef.id);
         
         // Eylemler tablosuna kayıt ekle
         const eylemlerRef = collection(db, "Eylemler");
         await addDoc(eylemlerRef, {
           eylem_tarihi: new Date(),
-          eylem_aciklamasi: `"${supplierData.sirket_ismi}" isimli tedarikçi eklendi.`,
+          eylem_aciklamasi: `"${customerData.sirket_ismi}" isimli müşteri eklendi.`,
           kullanici_id: currentUser?.uid || '',
           firma_id: userData.firma_id,
-          islem_turu: 'tedarikci_ekleme',
+          islem_turu: 'musteri_ekleme',
           ilgili_belge_id: docRef.id,
           kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı'
         });
         
         // Başarı sayfasına yönlendir
-        router.push('/supplier-success');
+        Alert.alert("Başarılı", "Müşteri başarıyla eklendi", [
+          { 
+            text: "Tamam", 
+            onPress: () => router.push('/customers')
+          }
+        ]);
+        
       } catch (firestoreError) {
-        // firestoreError'u FirebaseError tipine dönüştürün
-        const fbError = firestoreError as FirebaseError;
+        const fbError = firestoreError as Error;
         
         if (fbError.message && fbError.message.includes("permission")) {
           Alert.alert("Yetki Hatası", 
@@ -126,15 +123,12 @@ export default function AddSupplierScreen() {
             ]
           );
         } else {
-          throw firestoreError; // Diğer hataları üst catch bloğuna yönlendir
+          throw firestoreError;
         }
       }
     } catch (error) {
-      console.error("Tedarikçi eklenirken hata:", error);
-      
-      // error'u string özelliği olan bir tipe dönüştürün
-      const err = error as Error;
-      Alert.alert("Hata", "Tedarikçi eklenirken bir sorun oluştu: " + (err.message || "Bilinmeyen hata"));
+      console.error("Müşteri eklenirken hata:", error);
+      Alert.alert("Hata", "Müşteri eklenirken bir sorun oluştu. Lütfen tekrar deneyin.");
     } finally {
       setLoading(false);
     }
@@ -153,7 +147,7 @@ export default function AddSupplierScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={24} color="#222222" />
             </TouchableOpacity>
-            <Text style={styles.screenTitle}>Yeni Tedarikçi Ekle</Text>
+            <Text style={styles.screenTitle}>Yeni Müşteri Ekle</Text>
             <TouchableOpacity style={styles.iconButton}>
               <Feather name="help-circle" size={24} color="#666666" />
             </TouchableOpacity>
@@ -171,12 +165,12 @@ export default function AddSupplierScreen() {
               <Text style={styles.infoValue}>{userData?.firma_id || 'Belirtilmemiş'}</Text>
             </View>
             
-            {/* Supplier Name */}
+            {/* Customer Name */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Firma Unvanı*</Text>
               <TextInput
                 style={styles.input}
-                value={supplierData.sirket_ismi}
+                value={customerData.sirket_ismi}
                 onChangeText={(text) => handleChange('sirket_ismi', text)}
                 placeholder="Firma unvanını giriniz"
                 placeholderTextColor="#AAAAAA"
@@ -188,7 +182,7 @@ export default function AddSupplierScreen() {
               <Text style={styles.label}>Telefon Numarası</Text>
               <TextInput
                 style={styles.input}
-                value={supplierData.telefon}
+                value={customerData.telefon}
                 onChangeText={(text) => handleChange('telefon', text)}
                 placeholder="Firma telefon numarasını giriniz"
                 placeholderTextColor="#AAAAAA"
@@ -201,7 +195,7 @@ export default function AddSupplierScreen() {
               <Text style={styles.label}>E-posta Adresi</Text>
               <TextInput
                 style={styles.input}
-                value={supplierData.eposta}
+                value={customerData.eposta}
                 onChangeText={(text) => handleChange('eposta', text)}
                 placeholder="Firma e-posta adresini giriniz"
                 placeholderTextColor="#AAAAAA"
@@ -215,7 +209,7 @@ export default function AddSupplierScreen() {
               <Text style={styles.label}>Adres</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
-                value={supplierData.adres}
+                value={customerData.adres}
                 onChangeText={(text) => handleChange('adres', text)}
                 placeholder="Firma adresini giriniz"
                 placeholderTextColor="#AAAAAA"
@@ -231,13 +225,13 @@ export default function AddSupplierScreen() {
             {/* Add Button */}
             <TouchableOpacity
               style={styles.addButton}
-              onPress={handleAddSupplier}
+              onPress={handleAddCustomer}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.addButtonText}>Tedarikçi Ekle</Text>
+                <Text style={styles.addButtonText}>Müşteri Ekle</Text>
               )}
             </TouchableOpacity>
           </ScrollView>
@@ -273,7 +267,6 @@ export default function AddSupplierScreen() {
   );
 }
 
-// Stiller değişmedi
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -349,9 +342,6 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 15,
     fontSize: 16,
-  },
-  shortInput: {
-    width: '35%',
   },
   textArea: {
     height: 100,

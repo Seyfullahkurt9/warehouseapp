@@ -12,254 +12,158 @@ import {
   Platform,
   Modal,
   FlatList,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
-// Firebase imports - uncomment when ready to use
-// import firestore from '@react-native-firebase/firestore';
-// import auth from '@react-native-firebase/auth';
+// Müşteri tipi tanımı
+interface Customer {
+  id: string;
+  sirket_ismi: string;
+  adres?: string;
+  telefon?: string;
+  eposta?: string;
+  firma_id: string;
+}
 
-// Order type definition
+// Sipariş tipi tanımı
 interface Order {
-  id?: string;
-  date: string;
-  productCode: string;
-  productName: string;
-  unit: string;
-  quantity: string;
-  companyCode: string;
-  companyName: string;
-  createdAt: Date;
-  updatedAt?: Date;
-  userId?: string;
-  status?: 'pending' | 'completed' | 'cancelled';
+  musteri_id: string;
+  aciklama: string;
+  olusturma_tarihi: Date;
+  durum: string;
+  firma_id: string;
+  ekleyen_kullanici_id?: string;
+  ekleyen_kullanici_adi?: string;
 }
 
 export default function CreateOrderScreen() {
-  const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [productCode, setProductCode] = useState('');
-  const [productName, setProductName] = useState('');
-  const [unit, setUnit] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [companyCode, setCompanyCode] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  // For custom date picker
-  const [selectedDay, setSelectedDay] = useState(date.getDate());
-  const [selectedMonth, setSelectedMonth] = useState(date.getMonth());
-  const [selectedYear, setSelectedYear] = useState(date.getFullYear());
-  const [activeTab, setActiveTab] = useState('day');
-
-  const months = [
-    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
-  ];
+  const { userData, currentUser } = useAuth();
   
-  const formatDate = (date) => {
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}.${month}.${year}`;
-  };
-
-  // Generate array of days in the current month/year
-  const getDaysInMonth = (year, month) => {
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  // Generate years list (5 years before and 5 years after current year)
-  const getYearsList = () => {
-    const currentYear = new Date().getFullYear();
-    const years: number[] = []; // Add explicit type here
-    for (let i = currentYear - 5; i <= currentYear + 5; i++) {
-      years.push(i);
-    }
-    return years;
-  };
-
-  const years = getYearsList();
-  const daysInMonth = getDaysInMonth(selectedYear, selectedMonth);
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-  // Update date value when date picker selections change
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+  
+  // Müşteri seçimi için state değişkenleri
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [customerSearchText, setCustomerSearchText] = useState('');
+  
+  // Müşterileri getirme
   useEffect(() => {
-    // Make sure the day is valid for the selected month
-    const maxDays = getDaysInMonth(selectedYear, selectedMonth);
-    let validDay = selectedDay;
-    if (validDay > maxDays) {
-      validDay = maxDays;
-      setSelectedDay(maxDays);
+    const fetchCustomers = async () => {
+      try {
+        if (!userData?.firma_id) {
+          setLoadingCustomers(false);
+          return;
+        }
+
+        const customersRef = collection(db, "Musteriler");
+        const q = query(customersRef, where("firma_id", "==", userData.firma_id));
+        const querySnapshot = await getDocs(q);
+
+        const customersList: Customer[] = [];
+        querySnapshot.forEach((doc) => {
+          customersList.push({
+            id: doc.id,
+            ...doc.data()
+          } as Customer);
+        });
+
+        setCustomers(customersList);
+        setLoadingCustomers(false);
+      } catch (error) {
+        console.error("Müşteriler yüklenirken hata:", error);
+        setLoadingCustomers(false);
+        Alert.alert("Hata", "Müşteri listesi yüklenemedi");
+      }
+    };
+
+    fetchCustomers();
+  }, [userData?.firma_id]);
+
+  // Siparişi kaydetme
+  const handleSave = async () => {
+    // Girişleri doğrula
+    if (!selectedCustomer) {
+      Alert.alert("Uyarı", "Lütfen bir müşteri seçiniz");
+      return;
     }
     
-    setDate(new Date(selectedYear, selectedMonth, validDay));
-  }, [selectedDay, selectedMonth, selectedYear]);
-
-  const confirmDateSelection = () => {
-    setShowDatePicker(false);
-  };
-
-  // Function to save order to Firebase
-  const saveOrderToFirebase = async (order: Order) => {
-    try {
-      // This is a placeholder function that will be implemented when Firebase is integrated
-      console.log("Saving order to Firebase:", order);
-      
-      // Example implementation for reference:
-      // const userId = auth().currentUser?.uid;
-      // if (!userId) {
-      //   throw new Error("Kullanıcı oturum açmamış!");
-      // }
-      // 
-      // await firestore()
-      //   .collection('orders')
-      //   .add({
-      //     ...order,
-      //     userId,
-      //     createdAt: firestore.FieldValue.serverTimestamp(),
-      //     updatedAt: firestore.FieldValue.serverTimestamp(),
-      //     status: 'pending'
-      //   });
-      
-      // Success
-      return true;
-    } catch (error) {
-      console.error("Firebase save error:", error);
-      return false;
+    if (!description.trim()) {
+      Alert.alert("Uyarı", "Lütfen sipariş açıklaması giriniz");
+      return;
     }
-  };
 
-  const handleSave = async () => {
-    // Validate input fields
-    if (!productCode || !productName || !unit || !quantity || !companyCode || !companyName) {
-      // You might want to show an error message to the user
-      alert("Lütfen tüm alanları doldurunuz.");
+    if (!userData?.firma_id) {
+      Alert.alert("Hata", "Kullanıcı firma bilgisi bulunamadı");
       return;
     }
 
     setLoading(true);
 
     try {
+      // Sipariş nesnesini oluştur
       const newOrder: Order = {
-        date: formatDate(date),
-        productCode,
-        productName,
-        unit,
-        quantity,
-        companyCode,
-        companyName,
-        createdAt: new Date()
+        musteri_id: selectedCustomer.id,
+        aciklama: description.trim(),
+        olusturma_tarihi: new Date(),
+        durum: "Beklemede", // Varsayılan durum
+        firma_id: userData.firma_id,
+        ekleyen_kullanici_id: currentUser?.uid || '',
+        ekleyen_kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı'
       };
 
-      // When Firebase is integrated, uncomment this:
-      // const success = await saveOrderToFirebase(newOrder);
-      // if (success) {
-      //   router.push('/order-success');
-      // } else {
-      //   alert("Sipariş kaydedilemedi. Lütfen tekrar deneyiniz.");
-      // }
+      // Siparişi Firestore'a kaydet
+      const siparislerRef = collection(db, "Siparisler");
+      const docRef = await addDoc(siparislerRef, newOrder);
       
-      // For now, just simulate a successful save
-      setTimeout(() => {
-        setLoading(false);
-        router.push('/order-success');
-      }, 1000);
-    } catch (error) {
-      console.error("Save error:", error);
+      // Sipariş geçmişi oluştur
+      const siparis_gecmisiRef = collection(db, "Siparis_Gecmisi");
+      await addDoc(siparis_gecmisiRef, {
+        siparis_id: docRef.id,
+        tarih: new Date(),
+        durum: "Beklemede",
+        aciklama: "Sipariş oluşturuldu"
+      });
+      
+      // Eylemler koleksiyonuna kayıt ekle
+      const eylemlerRef = collection(db, "Eylemler");
+      await addDoc(eylemlerRef, {
+        eylem_tarihi: new Date(),
+        eylem_aciklamasi: `"${selectedCustomer.sirket_ismi}" müşterisi için yeni sipariş oluşturuldu.`,
+        kullanici_id: currentUser?.uid || '',
+        kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı',
+        firma_id: userData.firma_id,
+        islem_turu: 'siparis_olusturma',
+        ilgili_belge_id: docRef.id
+      });
+
       setLoading(false);
-      alert("Bir hata oluştu. Lütfen tekrar deneyiniz.");
+      router.push('/order-success');
+      
+    } catch (error) {
+      console.error("Sipariş kaydedilirken hata:", error);
+      setLoading(false);
+      Alert.alert("Hata", "Sipariş kaydedilirken bir sorun oluştu. Lütfen tekrar deneyiniz.");
     }
   };
 
-  const renderDatePickerContent = () => {
-    switch(activeTab) {
-      case 'day':
-        return (
-          <FlatList
-            data={days}
-            numColumns={7}
-            keyExtractor={(item) => `day-${item}`}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  styles.datePickerItem,
-                  selectedDay === item && styles.datePickerItemSelected
-                ]}
-                onPress={() => setSelectedDay(item)}
-              >
-                <Text 
-                  style={[
-                    styles.datePickerItemText,
-                    selectedDay === item && styles.datePickerItemTextSelected
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            )}
-            contentContainerStyle={styles.datePickerGrid}
-          />
-        );
-      case 'month':
-        return (
-          <FlatList
-            data={months}
-            numColumns={3}
-            keyExtractor={(item, index) => `month-${index}`}
-            renderItem={({ item, index }) => (
-              <TouchableOpacity
-                style={[
-                  styles.datePickerItem,
-                  styles.monthItem,
-                  selectedMonth === index && styles.datePickerItemSelected
-                ]}
-                onPress={() => setSelectedMonth(index)}
-              >
-                <Text 
-                  style={[
-                    styles.datePickerItemText,
-                    selectedMonth === index && styles.datePickerItemTextSelected
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            )}
-            contentContainerStyle={styles.datePickerGrid}
-          />
-        );
-      case 'year':
-        return (
-          <FlatList
-            data={years}
-            numColumns={3}
-            keyExtractor={(item) => `year-${item}`}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  styles.datePickerItem,
-                  styles.yearItem,
-                  selectedYear === item && styles.datePickerItemSelected
-                ]}
-                onPress={() => setSelectedYear(item)}
-              >
-                <Text 
-                  style={[
-                    styles.datePickerItemText,
-                    selectedYear === item && styles.datePickerItemTextSelected
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            )}
-            contentContainerStyle={styles.datePickerGrid}
-          />
-        );
-    }
+  // Filtrelenmiş müşterileri döndür
+  const filteredCustomers = customers.filter(customer => 
+    customer.sirket_ismi.toLowerCase().includes(customerSearchText.toLowerCase())
+  );
+
+  // Müşteri seçimi yap
+  const handleSelectCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setShowCustomerPicker(false);
   };
 
   return (
@@ -276,14 +180,7 @@ export default function CreateOrderScreen() {
               <Ionicons name="arrow-back" size={24} color="#222222" />
             </TouchableOpacity>
             <Text style={styles.screenTitle}>Sipariş Oluşturma</Text>
-            <TouchableOpacity style={styles.calendarButton}>
-              <View style={styles.calendarIconContainer}>
-                <Feather name="calendar" size={24} color="#222222" />
-                <View style={styles.addIconBadge}>
-                  <Feather name="plus" size={12} color="#222222" />
-                </View>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.headerRight}></View>
           </View>
         </View>
 
@@ -297,92 +194,68 @@ export default function CreateOrderScreen() {
             contentContainerStyle={styles.formContainer}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Date Field */}
+            {/* Firma bilgisi */}
+            {userData?.firma_id && (
+              <View style={styles.firmaBilgisi}>
+                <Text style={styles.firmaLabel}>Firma ID:</Text>
+                <Text style={styles.firmaValue}>{userData.firma_id}</Text>
+              </View>
+            )}
+            
+            {/* Müşteri Seçimi */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Tarih</Text>
+              <Text style={styles.label}>Müşteri Seçimi*</Text>
               <TouchableOpacity
-                style={styles.input}
-                onPress={() => setShowDatePicker(true)}
+                style={[
+                  styles.input, 
+                  styles.selectInput, 
+                  loadingCustomers && styles.disabledInput
+                ]}
+                onPress={() => {
+                  if (!loadingCustomers) setShowCustomerPicker(true);
+                }}
+                disabled={loadingCustomers}
               >
-                <Text style={styles.inputText}>{formatDate(date)}</Text>
-                <Feather name="calendar" size={20} color="#666666" />
+                {loadingCustomers ? (
+                  <ActivityIndicator size="small" color="#E6A05F" />
+                ) : selectedCustomer ? (
+                  <Text style={styles.inputText}>{selectedCustomer.sirket_ismi}</Text>
+                ) : (
+                  <Text style={styles.placeholderText}>Müşteri seçiniz</Text>
+                )}
+                <Feather name="chevron-down" size={20} color="#666666" />
               </TouchableOpacity>
             </View>
 
-            {/* Product Code Field */}
+            {/* Açıklama Alanı */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Ürün/stok kodu</Text>
+              <Text style={styles.label}>Sipariş Açıklaması*</Text>
               <TextInput
-                style={[styles.input, styles.textInput]}
-                value={productCode}
-                onChangeText={setProductCode}
-                placeholder="Ürün veya stok kodunu girin"
+                style={[styles.input, styles.textArea]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Sipariş detaylarını giriniz"
                 placeholderTextColor="#AAAAAA"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
               />
             </View>
 
-            {/* Product Name Field */}
+            {/* Durum Bilgisi */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Ürün/stok adı</Text>
-              <TextInput
-                style={[styles.input, styles.textInput]}
-                value={productName}
-                onChangeText={setProductName}
-                placeholder="Ürün veya stok adını girin"
-                placeholderTextColor="#AAAAAA"
-              />
+              <Text style={styles.label}>Durum</Text>
+              <View style={styles.statusContainer}>
+                <View style={styles.statusBadge}>
+                  <Text style={styles.statusText}>Beklemede</Text>
+                </View>
+                <Text style={styles.statusHint}>
+                  Sipariş durumu otomatik olarak "Beklemede" olarak ayarlanır
+                </Text>
+              </View>
             </View>
 
-            {/* Unit Field */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Alış/Satış birimi</Text>
-              <TextInput
-                style={[styles.input, styles.textInput]}
-                value={unit}
-                onChangeText={setUnit}
-                placeholder="Örn: Adet, Kg, Litre"
-                placeholderTextColor="#AAAAAA"
-              />
-            </View>
-
-            {/* Quantity Field */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Miktarı</Text>
-              <TextInput
-                style={[styles.input, styles.textInput]}
-                value={quantity}
-                onChangeText={setQuantity}
-                placeholder="Miktar girin"
-                placeholderTextColor="#AAAAAA"
-                keyboardType="numeric"
-              />
-            </View>
-
-            {/* Company Code Field */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Firma kodu</Text>
-              <TextInput
-                style={[styles.input, styles.textInput]}
-                value={companyCode}
-                onChangeText={setCompanyCode}
-                placeholder="Firma kodunu girin"
-                placeholderTextColor="#AAAAAA"
-              />
-            </View>
-
-            {/* Company Name Field */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Firma unvanı</Text>
-              <TextInput
-                style={[styles.input, styles.textInput]}
-                value={companyName}
-                onChangeText={setCompanyName}
-                placeholder="Firma unvanını girin"
-                placeholderTextColor="#AAAAAA"
-              />
-            </View>
-
-            {/* Save Button */}
+            {/* Kaydetme Butonu */}
             <TouchableOpacity 
               style={styles.saveButton} 
               onPress={handleSave}
@@ -391,117 +264,92 @@ export default function CreateOrderScreen() {
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.saveButtonText}>Kaydet</Text>
+                <Text style={styles.saveButtonText}>Sipariş Oluştur</Text>
               )}
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* Custom Date Picker Modal */}
+        {/* Müşteri Seçme Modalı */}
         <Modal
-          visible={showDatePicker}
+          visible={showCustomerPicker}
           transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowDatePicker(false)}
+          animationType="slide"
+          onRequestClose={() => setShowCustomerPicker(false)}
         >
-          <TouchableOpacity 
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowDatePicker(false)}
-          >
-            <View 
-              style={styles.datePickerContainer}
-              onStartShouldSetResponder={() => true}
-              onTouchEnd={(e) => e.stopPropagation()}
-            >
-              {/* Date picker header */}
-              <View style={styles.datePickerHeader}>
-                <Text style={styles.datePickerTitle}>Tarih Seçin</Text>
-                <Text style={styles.datePickerCurrentDate}>{formatDate(date)}</Text>
-              </View>
-              
-              {/* Tab switcher */}
-              <View style={styles.datePickerTabs}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Müşteri Seçin</Text>
                 <TouchableOpacity 
-                  style={[
-                    styles.datePickerTab, 
-                    activeTab === 'day' && styles.datePickerTabActive
-                  ]}
-                  onPress={() => setActiveTab('day')}
+                  style={styles.closeButton}
+                  onPress={() => setShowCustomerPicker(false)}
                 >
-                  <Text style={[
-                    styles.datePickerTabText,
-                    activeTab === 'day' && styles.datePickerTabTextActive
-                  ]}>Gün</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.datePickerTab, 
-                    activeTab === 'month' && styles.datePickerTabActive
-                  ]}
-                  onPress={() => setActiveTab('month')}
-                >
-                  <Text style={[
-                    styles.datePickerTabText,
-                    activeTab === 'month' && styles.datePickerTabTextActive
-                  ]}>Ay</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[
-                    styles.datePickerTab, 
-                    activeTab === 'year' && styles.datePickerTabActive
-                  ]}
-                  onPress={() => setActiveTab('year')}
-                >
-                  <Text style={[
-                    styles.datePickerTabText,
-                    activeTab === 'year' && styles.datePickerTabTextActive
-                  ]}>Yıl</Text>
+                  <Ionicons name="close" size={24} color="#222222" />
                 </TouchableOpacity>
               </View>
-              
-              {/* Date picker content */}
-              <View style={styles.datePickerContent}>
-                {renderDatePickerContent()}
+
+              {/* Arama Çubuğu */}
+              <View style={styles.searchContainer}>
+                <Feather name="search" size={20} color="#999999" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={customerSearchText}
+                  onChangeText={setCustomerSearchText}
+                  placeholder="Müşteri ara..."
+                  placeholderTextColor="#AAAAAA"
+                />
               </View>
-              
-              {/* Date picker actions */}
-              <View style={styles.datePickerActions}>
-                <TouchableOpacity 
-                  style={styles.datePickerButton} 
-                  onPress={() => setShowDatePicker(false)}
-                >
-                  <Text style={styles.datePickerButtonText}>İptal</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.datePickerButton, styles.datePickerConfirmButton]} 
-                  onPress={confirmDateSelection}
-                >
-                  <Text style={[styles.datePickerButtonText, styles.datePickerConfirmButtonText]}>
-                    Tamam
-                  </Text>
-                </TouchableOpacity>
-              </View>
+
+              {/* Müşteri Listesi */}
+              <FlatList
+                data={filteredCustomers}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity 
+                    style={styles.customerItem}
+                    onPress={() => handleSelectCustomer(item)}
+                  >
+                    <Text style={styles.customerName}>{item.sirket_ismi}</Text>
+                    {item.telefon && <Text style={styles.customerInfo}>{item.telefon}</Text>}
+                    {item.eposta && <Text style={styles.customerInfo}>{item.eposta}</Text>}
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View style={styles.emptyListContainer}>
+                    <Text style={styles.emptyText}>
+                      {customerSearchText ? "Arama kriterinize uygun müşteri bulunamadı" : "Müşteri listesi boş"}
+                    </Text>
+                  </View>
+                }
+                contentContainerStyle={styles.listContainer}
+              />
             </View>
-          </TouchableOpacity>
+          </View>
         </Modal>
       </SafeAreaView>
 
       {/* Bottom Tab Navigation */}
       <View style={styles.tabBarContainer}>
         <View style={styles.tabBar}>
-          <TouchableOpacity style={styles.tabItem}>
+          <TouchableOpacity 
+            style={styles.tabItem}
+            onPress={() => router.push('/menu')}
+          >
             <Ionicons name="grid-outline" size={24} color="#666666" />
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={styles.tabItem}
-            onPress={() => router.replace('/home')}
+            onPress={() => router.push('/home')}
           >
             <Ionicons name="home-outline" size={24} color="#666666" />
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.tabItem}>
+          <TouchableOpacity 
+            style={styles.tabItem}
+            onPress={() => router.push('/profile')}
+          >
             <Ionicons name="person-outline" size={24} color="#666666" />
           </TouchableOpacity>
         </View>
@@ -547,19 +395,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#222222',
   },
-  calendarButton: {
-    padding: 5,
-  },
-  calendarIconContainer: {
-    position: 'relative',
-  },
-  addIconBadge: {
-    position: 'absolute',
-    bottom: -5,
-    right: -5,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 2,
+  headerRight: {
+    width: 34, // Dengeleme için backButton ile aynı genişlik
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -585,34 +422,173 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DDDDDD',
     borderRadius: 8,
-    height: 50,
+    minHeight: 50,
     paddingHorizontal: 15,
+    fontSize: 16,
+    color: '#222222',
+  },
+  selectInput: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 12,
   },
-  textInput: {
-    fontSize: 16,
-    color: '#222222',
-    paddingVertical: 0, // Fix for Android text input padding
+  disabledInput: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#EEEEEE',
   },
   inputText: {
     fontSize: 16,
     color: '#222222',
+    flex: 1,
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#AAAAAA',
+    flex: 1,
+  },
+  textArea: {
+    paddingTop: 12,
+    height: 120,
+    textAlignVertical: 'top',
+  },
+  firmaBilgisi: {
+    backgroundColor: '#FFF9F2',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  firmaLabel: {
+    fontSize: 14,
+    color: '#666666',
+    marginRight: 8,
+  },
+  firmaValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#E6A05F',
+  },
+  statusContainer: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDDDDD',
+    borderRadius: 8,
+    padding: 15,
+  },
+  statusBadge: {
+    backgroundColor: '#F0B252', // Beklemede durumu için sarı
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  statusText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  statusHint: {
+    fontSize: 14,
+    color: '#888888',
+    fontStyle: 'italic',
   },
   saveButton: {
     backgroundColor: '#E6A05F',
     borderRadius: 8,
-    height: 50,
+    height: 56,
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 20,
-    width: '100%',
   },
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222222',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    margin: 16,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 45,
+    fontSize: 16,
+    color: '#222222',
+  },
+  listContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  customerItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#222222',
+    marginBottom: 4,
+  },
+  customerInfo: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 4,
+  },
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#888888',
+    textAlign: 'center',
   },
   tabBarContainer: {
     position: 'absolute',
@@ -638,117 +614,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  
-  // Date picker modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  datePickerContainer: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  datePickerHeader: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
-    alignItems: 'center',
-  },
-  datePickerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#222222',
-    marginBottom: 4,
-  },
-  datePickerCurrentDate: {
-    fontSize: 16,
-    color: '#666666',
-  },
-  datePickerTabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
-  },
-  datePickerTab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  datePickerTabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#E6A05F',
-  },
-  datePickerTabText: {
-    fontSize: 16,
-    color: '#666666',
-  },
-  datePickerTabTextActive: {
-    color: '#E6A05F',
-    fontWeight: 'bold',
-  },
-  datePickerContent: {
-    paddingVertical: 16,
-    maxHeight: 300,
-  },
-  datePickerGrid: {
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  datePickerItem: {
-    width: '14.28%', // 7 columns for days
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    margin: 1,
-  },
-  monthItem: {
-    width: '33.33%', // 3 columns for months
-    aspectRatio: 2,
-  },
-  yearItem: {
-    width: '33.33%', // 3 columns for years
-    aspectRatio: 2,
-  },
-  datePickerItemSelected: {
-    backgroundColor: '#E6A05F20',
-    borderRadius: 100,
-  },
-  datePickerItemText: {
-    fontSize: 16,
-    color: '#333333',
-  },
-  datePickerItemTextSelected: {
-    color: '#E6A05F',
-    fontWeight: 'bold',
-  },
-  datePickerActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#EEEEEE',
-  },
-  datePickerButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  datePickerButtonText: {
-    fontSize: 16,
-    color: '#666666',
-  },
-  datePickerConfirmButton: {
-    backgroundColor: '#E6A05F',
-  },
-  datePickerConfirmButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
   },
 });

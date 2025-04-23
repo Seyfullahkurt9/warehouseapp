@@ -2,23 +2,159 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Geliştirme aşamasında tüm okuma ve yazma işlemlerine izin ver
-    // NOT: Üretim ortamında daha kısıtlayıcı kurallar kullanmanız önerilir
-    match /{document=**} {
-      allow read, write: if true;
+    // Helper fonksiyonlar
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
-    // Daha güvenli seçenek:
-    // Kullanıcılar kendileri ile ilgili verileri okuyup yazabilirler
+    function getUserData() {
+      return get(/databases/$(database)/documents/Kullanicilar/$(request.auth.uid)).data;
+    }
+    
+    function userFirmaId() {
+      return getUserData().firma_id;
+    }
+    
+    function isAdmin() {
+      return getUserData().yetki_id == "admin";
+    }
+    
+    function isSameFirma(firmaIdField) {
+      return isAuthenticated() && 
+             resource.data[firmaIdField] == userFirmaId();
+    }
+    
+    function isAdminOrSameFirma(firmaIdField) {
+      return isAuthenticated() && 
+             (isAdmin() || resource.data[firmaIdField] == userFirmaId());
+    }
+
+    // Kullanıcılar koleksiyonu için kurallar
     match /Kullanicilar/{userId} {
-      allow read, write: if request.auth != null && 
-                         (request.auth.uid == userId || 
-                          get(/databases/$(database)/documents/Kullanicilar/$(request.auth.uid)).data.yetki_id == "admin");
+      // Kullanıcılar kendi bilgilerini okuyabilir
+      // Admin ise tüm kullanıcıları okuyabilir
+      allow read: if isAuthenticated() && 
+                   (request.auth.uid == userId || 
+                    (isAdmin() && resource.data.firma_id == userFirmaId()));
+      
+      // Sadece admin kullanıcı ekleyip güncelleyebilir
+      // Kullanıcı kendini güncelleyebilir
+      allow write: if isAuthenticated() && 
+                     (request.auth.uid == userId || 
+                      (isAdmin() && 
+                       (resource == null || resource.data.firma_id == userFirmaId())));
     }
     
-    // Eylemler koleksiyonu için kurallar
+    // Firmalar koleksiyonu için kurallar
+    match /Firmalar/{firmaId} {
+      // Kullanıcılar kendi firmalarını okuyabilir
+      // Adminler kendi firmalarını okuyabilir ve yazabilir
+      allow read: if isAuthenticated() && firmaId == userFirmaId();
+      allow write: if isAuthenticated() && isAdmin() && firmaId == userFirmaId();
+    }
+    
+    // Depolar koleksiyonu için kurallar
+    match /Depolar/{depoId} {
+      // Kullanıcılar kendi firmalarının depolarını okuyabilir
+      // Adminler kendi firmalarının depolarını yazabilir
+      allow read: if isAuthenticated() && isSameFirma("firma_id");
+      allow write: if isAuthenticated() && isAdmin() && isSameFirma("firma_id");
+    }
+    
+    // Stoklar koleksiyonu için kurallar
+    match /Stoklar/{stokId} {
+      allow read: if isAuthenticated() && isSameFirma("firma_id");
+      allow write: if isAuthenticated() && isAdmin() && isSameFirma("firma_id");
+    }
+    
+    // Stok_Hareketleri koleksiyonu için kurallar
+    match /Stok_Hareketleri/{hareketId} {
+      allow read: if isAuthenticated() && isSameFirma("firma_id");
+      // Adminler yazabilir, normal kullanıcılar ekleme yapabilir
+      allow create: if isAuthenticated() && 
+                      request.resource.data.firma_id == userFirmaId();
+      allow update, delete: if isAuthenticated() && 
+                              isAdmin() && 
+                              isSameFirma("firma_id");
+    }
+    
+    //Tedarikçiler normal kullanıcıların tedarikçi eklemesine izin ver
+    match /Tedarikciler/{tedarikciId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                     request.resource.data.firma_id == getUserData().firma_id;
+      // Sadece adminler güncelleme ve silme yapabilir
+      allow update, delete: if isAuthenticated() && 
+                              getUserData().yetki_id == "admin" && 
+                              request.resource.data.firma_id == getUserData().firma_id;
+    }
+    
+    // Musteriler koleksiyonu için kurallar - tedarikçilerle aynı
+    match /Musteriler/{musteriId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                     request.resource.data.firma_id == getUserData().firma_id;
+      // Sadece adminler güncelleme ve silme yapabilir
+      allow update, delete: if isAuthenticated() && 
+                              getUserData().yetki_id == "admin" && 
+                              request.resource.data.firma_id == getUserData().firma_id;
+    }
+    
+    // Siparisler koleksiyonu için kurallar
+    match /Siparisler/{siparisId} {
+      allow read: if isAuthenticated() && isSameFirma("firma_id");
+      
+      // Tüm kullanıcılar sipariş oluşturabilir, ama sadece kendi firması için
+      allow create: if isAuthenticated() && 
+                      request.resource.data.firma_id == userFirmaId();
+      
+      // Sadece adminler güncelleyebilir ve silebilir
+      allow update, delete: if isAuthenticated() && 
+                              isAdmin() && 
+                              isSameFirma("firma_id");
+    }
+    
+    // Siparis_Gecmisi koleksiyonu için kurallar
+    match /Siparis_Gecmisi/{gecmisId} {
+      allow read: if isAuthenticated();
+      
+      // Sipariş güncellemeleri için kontrol
+      allow write: if isAuthenticated() && 
+                     ("siparis_id" in request.resource.data &&
+                      exists(/databases/$(database)/documents/Siparisler/$(request.resource.data.siparis_id)) &&
+                      get(/databases/$(database)/documents/Siparisler/$(request.resource.data.siparis_id)).data.firma_id == userFirmaId());
+    }
+    
+    // AdminEmails koleksiyonu için kurallar - Sadece admin erişimi
+    match /AdminEmails/{emailId} {
+      allow read: if isAuthenticated() && isAdmin();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+    
+    // Yetkiler koleksiyonu için kurallar - Sadece admin erişimi
+    match /Yetkiler/{yetkiId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+    
+    // Eylemler koleksiyonu için kurallar - ÖNEMLİ GÜNCELLEME: firma_id eklendi
     match /Eylemler/{eylemId} {
-      allow read, write: if request.auth != null;
+      // Kullanıcılar kendi eylemlerini ve kendi firmasının eylemlerini okuyabilir
+      // Adminler kendi firmalarının tüm eylemlerini okuyabilir
+      allow read: if isAuthenticated() && 
+                   (resource.data.kullanici_id == request.auth.uid || 
+                    isAdmin()) &&
+                   resource.data.firma_id == userFirmaId();
+      
+      // Herkes kendi firması için eylem ekleyebilir
+      allow create: if isAuthenticated() && 
+                      request.resource.data.firma_id == userFirmaId() &&
+                      request.resource.data.kullanici_id == request.auth.uid;
+                      
+      // Adminler kendi firmalarının eylemlerini güncelleyebilir veya silebilir
+      allow update, delete: if isAuthenticated() && 
+                              isAdmin() && 
+                              resource.data.firma_id == userFirmaId();
     }
   }
 }

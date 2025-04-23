@@ -1,9 +1,78 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar, ActivityIndicator, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
 
 export default function ProfileScreen() {
+  // fetchUserData'ı da useAuth'tan alalım
+  const { userData, currentUser, loading: authLoading, updateUserData, fetchUserData } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Veri yenileme fonksiyonu
+  const handleRefreshData = async () => {
+    setRefreshing(true);
+    try {
+      if (currentUser) {
+        // AuthContext'ten gelen fetchUserData fonksiyonunu kullan
+        const success = await fetchUserData(currentUser);
+        
+        if (!success) {
+          Alert.alert("Hata", "Kullanıcı bilgileri yüklenemedi.");
+        }
+      }
+    } catch (error) {
+      console.error("Veri yenilenirken hata:", error);
+      Alert.alert("Hata", "Kullanıcı bilgileri yüklenemedi.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Loading durumu kontrol edilir
+  useEffect(() => {
+    if (!authLoading) {
+      setLoading(false);
+    }
+  }, [authLoading]);
+
+  // Yükleniyor durumu gösterilir
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#E6A05F" />
+      </View>
+    );
+  }
+
+  // Eğer kullanıcı verileri henüz yüklenmediyse
+  if (!userData) {
+    return (
+      <View style={[styles.container, styles.noDataContainer]}>
+        <Text style={styles.noDataText}>Kullanıcı bilgileri yüklenemedi.</Text>
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={handleRefreshData}
+        >
+          <Text style={styles.refreshButtonText}>Bilgileri Yenile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.refreshButton, {marginTop: 10, backgroundColor: '#999'}]}
+          onPress={() => router.push('/home')}
+        >
+          <Text style={styles.refreshButtonText}>Ana Sayfaya Dön</Text>
+        </TouchableOpacity>
+        <Text style={{marginTop: 20, color: '#666'}}>
+          Hata Detayları: Kullanıcı: {currentUser?.email || "Bilinmiyor"}
+        </Text>
+      </View>
+    );
+  }
+
+  // Kullanıcı adı ve soyadını birleştir
+  const fullName = `${userData.isim || ''} ${userData.soyisim || ''}`.trim();
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -26,7 +95,7 @@ export default function ProfileScreen() {
           <View style={styles.card}>
             {/* User Header */}
             <View style={styles.userHeader}>
-              <Text style={styles.userName}>AHMET GÜNER</Text>
+              <Text style={styles.userName}>{fullName}</Text>
               <View style={styles.userIconContainer}>
                 <Ionicons name="person" size={28} color="#E6A05F" />
               </View>
@@ -34,28 +103,38 @@ export default function ProfileScreen() {
 
             {/* User Information */}
             <View style={styles.infoContainer}>
-              {/* User No */}
+              {/* Role - Yetki */}
               <View style={styles.infoGroup}>
-                <Text style={styles.infoLabel}>Kullanıcı No</Text>
-                <Text style={styles.infoValue}>2</Text>
+                <Text style={styles.infoLabel}>Yetki</Text>
+                <Text style={styles.infoValue}>
+                  {userData.yetki_id === 'admin' ? 'Yönetici' : 'Standart Kullanıcı'}
+                </Text>
               </View>
 
-              {/* ID No */}
+              {/* Unvan */}
+              {userData.is_unvani && (
+                <View style={styles.infoGroup}>
+                  <Text style={styles.infoLabel}>İş Unvanı</Text>
+                  <Text style={styles.infoValue}>{userData.is_unvani}</Text>
+                </View>
+              )}
+
+              {/* Firma */}
               <View style={styles.infoGroup}>
-                <Text style={styles.infoLabel}>Kimlik No</Text>
-                <Text style={styles.infoValue}>12345678911</Text>
+                <Text style={styles.infoLabel}>Firma ID</Text>
+                <Text style={styles.infoValue}>{userData.firma_id || '-'}</Text>
               </View>
 
               {/* Phone */}
               <View style={styles.infoGroup}>
                 <Text style={styles.infoLabel}>Telefon Numarası</Text>
-                <Text style={styles.infoValue}>+905555555555</Text>
+                <Text style={styles.infoValue}>{userData.telefon || '-'}</Text>
               </View>
 
               {/* Email */}
               <View style={styles.infoGroup}>
                 <Text style={styles.infoLabel}>E-posta Adresi</Text>
-                <Text style={styles.infoValue}>ahmet55@gmail.com</Text>
+                <Text style={styles.infoValue}>{userData.eposta}</Text>
               </View>
 
               {/* Edit Button */}
@@ -73,7 +152,10 @@ export default function ProfileScreen() {
       {/* Bottom Tab Navigation */}
       <View style={styles.tabBarContainer}>
         <View style={styles.tabBar}>
-          <TouchableOpacity style={styles.tabItem}>
+          <TouchableOpacity 
+            style={styles.tabItem}
+            onPress={() => router.push('/menu')}
+          >
             <Ionicons name="grid-outline" size={24} color="#666666" />
           </TouchableOpacity>
           
@@ -97,6 +179,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noDataContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    backgroundColor: '#E6A05F',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   safeArea: {
     flex: 1,

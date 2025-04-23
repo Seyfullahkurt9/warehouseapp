@@ -5,6 +5,7 @@ import { Svg, Path, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { loginWithEmail } from '../firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -12,68 +13,20 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Hata", "E-posta ve şifre alanları boş olamaz.");
-      return;
-    }
-
-    setLoading(true);
-
     try {
-      // Call our custom login function that checks user role
       const { user, userData, isAdmin } = await loginWithEmail(email, password);
       
-      // Check if email is verified (optional)
-      if (!user.emailVerified) {
-        Alert.alert(
-          "E-posta Doğrulanmadı", 
-          "Lütfen e-posta adresinize gönderilen doğrulama linkini kullanarak hesabınızı doğrulayın.",
-          [
-            { text: "Tamam" },
-            { 
-              text: "Yeniden Gönder", 
-              onPress: () => {
-                // Implement resend verification email functionality here
-                console.log("Resend verification");
-              }
-            }
-          ]
-        );
-        setLoading(false);
-        return;
-      }
+      // AsyncStorage'ı güncelle
+      await AsyncStorage.setItem('userData', JSON.stringify(userData));
       
-      // Log user role information
-      console.log("User login successful:", user.email);
-      console.log("User role:", isAdmin ? "Admin" : "Normal User");
-      
-      // Redirect based on user role
+      // Yönlendirme
       if (isAdmin) {
         router.replace('/admin-home');
       } else {
         router.replace('/home');
       }
-
     } catch (error) {
-      // Handle login errors
-      let errorMessage = "Giriş sırasında bir hata oluştu.";
-      
-      if (error && typeof error === 'object' && 'code' in error) {
-        if (error.code === 'auth/invalid-email') {
-          errorMessage = "Geçersiz e-posta formatı.";
-        } else if (error.code === 'auth/user-disabled') {
-          errorMessage = "Bu kullanıcı hesabı devre dışı bırakıldı.";
-        } else if (error.code === 'auth/user-not-found') {
-          errorMessage = "Bu e-posta adresi ile kayıtlı bir kullanıcı bulunamadı.";
-        } else if (error.code === 'auth/wrong-password') {
-          errorMessage = "Yanlış şifre girdiniz.";
-        }
-      }
-      
-      Alert.alert("Giriş Hatası", errorMessage);
-      console.error("Login error:", error);
-    } finally {
-      setLoading(false);
+      // Hata yönetimi
     }
   };
 

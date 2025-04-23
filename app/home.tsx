@@ -3,10 +3,9 @@ import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } fro
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { logout } from '../firebase/auth';
 
 export default function UserHomeScreen() {
-  const { isAdmin, currentUser } = useAuth();
+  const { isAdmin, currentUser, logout } = useAuth();
   
   const handleLogout = async () => {
     try {
@@ -79,6 +78,19 @@ export default function UserHomeScreen() {
               <View style={styles.cardContent}>
                 <Feather name="users" size={40} color="#666666" />
                 <Text style={styles.cardText}>TEDARİKÇİLER</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Yeni Müşteriler Satırı */}
+          <View style={styles.gridRow}>
+            <TouchableOpacity 
+              style={[styles.gridCard, styles.fullWidthCard]}
+              onPress={() => router.push('/customers')}
+            >
+              <View style={styles.cardContent}>
+                <Feather name="user-check" size={40} color="#666666" />
+                <Text style={styles.cardText}>MÜŞTERİLER</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -245,5 +257,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  fullWidthCard: {
+    width: '100%',
   },
 });
