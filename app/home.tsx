@@ -1,15 +1,33 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar, Alert, ActivityIndicator, BackHandler } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { useFocusEffect } from '@react-navigation/native';
 
-export default function UserHomeScreen() {
+export default function HomeScreen() {
   const { isAdmin, currentUser, userData, logout } = useAuth();
   const [loading, setLoading] = useState(false);
+  
+  // Geri tuşu davranışını kontrol etme
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        // Eğer firma ID'si varsa, geri tuşuna basınca çıkış yapmadan ana sayfada kal
+        if (userData?.firma_id) {
+          return true; // Geri gitme işlemini engelle
+        }
+        return false; // Varsayılan davranışa izin ver
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      
+      return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [userData?.firma_id])
+  );
   
   const handleLogout = async () => {
     try {

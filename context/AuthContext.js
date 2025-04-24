@@ -82,28 +82,81 @@ export function AuthProvider({ children }) {
         return false;
       }
 
-      // Firestore'dan kullanıcı belgesini al
-      const userDocRef = doc(db, "Kullanicilar", user.uid);
-      const userDocSnap = await getDoc(userDocRef);
+      // Firestore'dan kullanıcı belgesini almayı dene
+      try {
+        const userDocRef = doc(db, "Kullanicilar", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
 
-      if (userDocSnap.exists()) {
-        const userDataFromFirestore = userDocSnap.data();
-        setUserData(userDataFromFirestore);
-        setIsAdmin(userDataFromFirestore.yetki_id === "admin");
+        if (userDocSnap.exists()) {
+          const userDataFromFirestore = userDocSnap.data();
+          setUserData(userDataFromFirestore);
+          setIsAdmin(userDataFromFirestore.yetki_id === "admin");
+          
+          // Önbellekte sakla
+          await AsyncStorage.setItem('userData', JSON.stringify(userDataFromFirestore));
+          
+          console.log("Kullanıcı bilgileri başarıyla güncellendi");
+          return true;
+        } else {
+          // Kullanıcı kayıtlı değilse, otomatik kayıt oluştur
+          console.log("Kullanıcı UID ile Firestore'da bulunamadı, yeni kayıt oluşturuluyor...");
+          
+          const newUserData = {
+            isim: "",
+            soyisim: "",
+            eposta: user.email || "",
+            telefon: "",
+            is_unvani: "",
+            firma_id: "",
+            yetki_id: "kullanici",
+            createdAt: new Date()
+          };
+          
+          // Kullanıcıyı kaydet
+          await setDoc(doc(db, "Kullanicilar", user.uid), newUserData);
+          
+          // State'i güncelle
+          setUserData(newUserData);
+          setIsAdmin(false);
+          
+          // Önbelleğe kaydet
+          await AsyncStorage.setItem('userData', JSON.stringify(newUserData));
+          
+          console.log("Yeni kullanıcı kaydı oluşturuldu");
+          return true;
+        }
+      } catch (firestoreError) {
+        console.error("Firestore erişim hatası:", firestoreError);
         
-        // Önbellekte sakla
-        await AsyncStorage.setItem('userData', JSON.stringify(userDataFromFirestore));
+        // Kritik hata durumunda önbellek verilerini kontrol et
+        try {
+          const cachedData = await AsyncStorage.getItem('userData');
+          if (cachedData) {
+            const parsedData = JSON.parse(cachedData);
+            setUserData(parsedData);
+            setIsAdmin(parsedData.yetki_id === "admin");
+            console.log("Önbellekten veri kullanıldı:", parsedData);
+            return true;
+          }
+        } catch (cacheError) {
+          console.error("Önbellek okuma hatası:", cacheError);
+        }
         
-        console.log("Kullanıcı bilgileri başarıyla güncellendi");
-        return true;
-      } else {
-        console.log("Kullanıcı UID ile Firestore'da bulunamadı");
-        // Burada otomatik çıkış YAP-MA-MA-LI-YIZ
-        // Sadece bilgilendirme yeterli
+        // Minimal bir kullanıcı nesnesi oluştur
+        const fallbackData = {
+          isim: "",
+          soyisim: "",
+          eposta: user.email || "",
+          firma_id: "",
+          yetki_id: "kullanici"
+        };
+        
+        setUserData(fallbackData);
+        setIsAdmin(false);
         return false;
       }
     } catch (error) {
-      console.error("Kullanıcı verisi alınırken hata:", error);
+      console.error("Kullanıcı verisi işlenirken beklenmeyen hata:", error);
       return false;
     }
   }; // fetchAndUpdateUserData fonksiyonunun sonu
@@ -247,14 +300,15 @@ export function AuthProvider({ children }) {
     try {
       console.log("Logout işlemi başlatıldı...");
       
-      // Önce AsyncStorage ve state'i temizle
-      await AsyncStorage.removeItem('userData');
+      // Önce AsyncStorage'i tamamen temizle
+      await AsyncStorage.clear();
+      console.log("AsyncStorage tamamen temizlendi");
       
       // Firebase'den çıkış yap
       await signOut(auth);
       console.log("Firebase auth'tan çıkış yapıldı");
       
-      // State'i sonra temizle
+      // State'i temizle
       setCurrentUser(null);
       setUserData(null);
       setIsAdmin(false);
@@ -263,7 +317,7 @@ export function AuthProvider({ children }) {
       return true;
     } catch (error) {
       console.error("Logout hatası:", error);
-      throw error; // Throw error to handle it in the component
+      throw error;
     }
   };
 

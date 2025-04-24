@@ -30,6 +30,13 @@ const isSpecialPublicPage = (path) => {
   return path === '/register' || path === '/forgot-password';
 };
 
+// Önce gerekli fonksiyonları ekleyelim
+const isPostRegistrationPage = (path) => {
+  return path === '/first-page' || 
+         path === '/join-company' || 
+         path === '/create-company';
+};
+
 // Auth routing wrapper
 function AuthWrapper({ children }) {
   const { currentUser, isAdmin, loading, userData } = useAuth();
@@ -37,24 +44,27 @@ function AuthWrapper({ children }) {
   const segments = useSegments();
 
   useEffect(() => {
-    const isLoading = loading; // boolean
-    // Array boş mu kontrolü
-    const hasNoSegments = (segments.length as number) === 0;
-
-    // Yükleniyorsa veya segmentler henüz hazır değilse bekle
-    // Ayrı ayrı kontrol et
-    if (isLoading) { 
+    // Loading kontrolü
+    if (loading) { 
       console.log("AuthWrapper: Loading is true, returning.");
       return;
     }
-    if (hasNoSegments) {
+    
+    // Segments kontrolü
+    if (!segments.length) {
       console.log("AuthWrapper: Segments array is empty, returning.");
       return;
     }
 
-    // Eğer buraya ulaşıldıysa, isLoading false VE hasNoSegments false demektir.
     const currentPath = '/' + segments.join('/');
     console.log(`AuthWrapper Check: currentUser=${!!currentUser}, isAdmin=${isAdmin}, loading=${loading}, path=${currentPath}, userData=${JSON.stringify(userData)}`);
+    
+    // userData null olduğunda çıkış yapmak yerine first-page'e yönlendir
+    if (currentUser && !userData && !isPublicPage(currentPath) && !isPostRegistrationPage(currentPath)) {
+      console.log("AuthWrapper: User is authenticated but userData is null, redirecting to /first-page");
+      router.replace('/first-page');
+      return;
+    }
 
     if (!currentUser) {
       // Kullanıcı giriş yapmamış (logged out)
@@ -64,19 +74,30 @@ function AuthWrapper({ children }) {
          router.replace('/login');
       } else {
          console.log(`AuthWrapper: Logged out user on public page or index (${currentPath}), allowing navigation.`);
-         // Kullanıcı çıkış yapmış ve public bir sayfada veya index'te, dokunma.
       }
     } else {
       // Kullanıcı giriş yapmış (logged in)
       
-      // SADECE login sayfasındaysa yönlendir
-      if (currentPath === '/login') {
-        // Firma ID'sine göre yönlendir
+      // ÖNEMLİ: Eğer kullanıcının firma_id'si varsa ve first-page, join-company, create-company sayfalarından birindeyse,
+      // kullanıcıyı rolüne göre ana sayfaya yönlendir
+      if (userData?.firma_id && isPostRegistrationPage(currentPath)) {
+        console.log(`AuthWrapper: User with firma_id trying to access post-registration page (${currentPath}), redirecting to home`);
+        if (isAdmin) {
+          router.replace('/admin-home');
+        } else {
+          router.replace('/home');
+        }
+        return;
+      }
+      
+      // Eğer kullanıcı public bir sayfadaysa (login, register vb.) ve özel public sayfa değilse
+      if (isPublicPage(currentPath) && !isSpecialPublicPage(currentPath)) {
+        // Onu firma durumuna ve rolüne göre yönlendir
         if (!userData?.firma_id) {
-          console.log(`AuthWrapper: Logged in user on login page, redirecting to /first-page`);
+          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), no firma_id, redirecting to /first-page`);
           router.replace('/first-page');
         } else {
-          console.log(`AuthWrapper: Logged in user on login page, redirecting based on role`);
+          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), has firma_id, redirecting based on role`);
           if (isAdmin) {
             router.replace('/admin-home');
           } else {
@@ -85,7 +106,7 @@ function AuthWrapper({ children }) {
         }
       }
       
-      // Admin sayfalarını koruma (Bu kısım doğru görünüyor)
+      // Admin sayfalarını koruma
       else if (isAdminPage(currentPath) && !isAdmin) {
         console.log(`AuthWrapper: Non-admin user on admin page (${currentPath}), redirecting to /home`);
         // Firma ID'si olmayan kullanıcıyı first-page'e yönlendirmek daha mantıklı olabilir
@@ -95,12 +116,8 @@ function AuthWrapper({ children }) {
            router.replace('/home');
         }
       }
-      // Kullanıcı giriş yapmış ve uygun bir sayfada (veya index'te), dokunma.
-      else {
-         console.log(`AuthWrapper: Logged in user on appropriate page (${currentPath}), allowing navigation.`);
-      }
     }
-  }, [currentUser, isAdmin, loading, segments, userData]); // Bağımlılıklar doğru
+  }, [currentUser, isAdmin, loading, segments, userData]);
 
   if (loading) {
     return <LoadingScreen />;
