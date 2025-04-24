@@ -8,21 +8,23 @@ import {
   StatusBar,
   ScrollView,
   ActivityIndicator,
-  Alert
+  Alert,
+  Clipboard
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 
-// Firma için tip tanımı
+// Firma için tip tanımı - davet_kodu eklendi
 interface CompanyData {
   firma_ismi: string;
   vergi_no: string;
   telefon_no: string;
   eposta: string;
   adres: string;
+  davet_kodu?: string;
 }
 
 export default function CompanyInfoScreen() {
@@ -30,6 +32,7 @@ export default function CompanyInfoScreen() {
   const [companyData, setCompanyData] = useState<CompanyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingCode, setRefreshingCode] = useState(false);
 
   useEffect(() => {
     const fetchCompanyData = async () => {
@@ -45,7 +48,16 @@ export default function CompanyInfoScreen() {
         const companySnapshot = await getDoc(companyRef);
 
         if (companySnapshot.exists()) {
-          setCompanyData(companySnapshot.data() as CompanyData);
+          const data = companySnapshot.data() as CompanyData;
+          
+          // Eğer davet kodu yoksa, otomatik olarak oluştur
+          if (!data.davet_kodu) {
+            const newCode = await generateUniqueInviteCode();
+            await updateDoc(companyRef, { davet_kodu: newCode });
+            data.davet_kodu = newCode;
+          }
+          
+          setCompanyData(data);
         } else {
           setError("Firma bilgileri bulunamadı.");
         }
@@ -67,6 +79,56 @@ export default function CompanyInfoScreen() {
 
     fetchCompanyData();
   }, [userData?.firma_id]);
+
+  // 8 haneli benzersiz davet kodu oluşturma
+  const generateUniqueInviteCode = (): string => {
+    // Son 5 haneli timestamp (saniyeler)
+    const timestamp = Date.now().toString().slice(-5);
+    
+    // Firma ID'sinin son 1 karakteri (varsa)
+    const firmaIdChar = (userData?.firma_id || 'X').slice(-1);
+    const firmaIdValue = firmaIdChar.charCodeAt(0) % 10; // 0-9 arası bir değer
+    
+    // 2 haneli rastgele sayı
+    const random = Math.floor(10 + Math.random() * 90).toString();
+    
+    // 8 haneli kod (5 + 1 + 2)
+    return timestamp + firmaIdValue + random;
+  };
+
+  // Davet kodunu yenileme
+  const refreshInviteCode = async () => {
+    if (!userData?.firma_id || !companyData) return;
+    
+    try {
+      setRefreshingCode(true);
+      
+      const newCode = await generateUniqueInviteCode();
+      const companyRef = doc(db, "Firmalar", userData.firma_id);
+      await updateDoc(companyRef, { davet_kodu: newCode });
+      
+      // UI'ı güncelle
+      setCompanyData({
+        ...companyData,
+        davet_kodu: newCode
+      });
+      
+      Alert.alert("Başarılı", "Davet kodu başarıyla yenilendi.");
+    } catch (error) {
+      console.error("Davet kodu yenilenirken hata:", error);
+      Alert.alert("Hata", "Davet kodu yenilenirken bir sorun oluştu.");
+    } finally {
+      setRefreshingCode(false);
+    }
+  };
+
+  // Davet kodunu panoya kopyalama
+  const copyInviteCode = () => {
+    if (!companyData?.davet_kodu) return;
+    
+    Clipboard.setString(companyData.davet_kodu);
+    Alert.alert("Kopyalandı", "Davet kodu panoya kopyalandı.");
+  };
 
   if (loading) {
     return (
@@ -123,6 +185,42 @@ export default function CompanyInfoScreen() {
                 </View>
               </View>
 
+              {/* Davet Kodu Bölümü */}
+              <View style={styles.cardSection}>
+                <Text style={styles.sectionTitle}>Davet Kodu</Text>
+                <View style={styles.inviteCodeContainer}>
+                  <Text style={styles.inviteCodeText}>
+                    {companyData.davet_kodu || 'Davet kodu yok'}
+                  </Text>
+                  <View style={styles.inviteCodeActions}>
+                    <TouchableOpacity 
+                      style={styles.inviteCodeButton}
+                      onPress={copyInviteCode}
+                    >
+                      <Feather name="copy" size={20} color="#FFFFFF" />
+                      <Text style={styles.inviteCodeButtonText}>Kopyala</Text>
+                    </TouchableOpacity>
+                    
+                    {userData?.yetki_id === "admin" && (
+                      <TouchableOpacity 
+                        style={[styles.inviteCodeButton, styles.refreshButton]}
+                        onPress={refreshInviteCode}
+                        disabled={refreshingCode}
+                      >
+                        {refreshingCode ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <Feather name="refresh-cw" size={20} color="#FFFFFF" />
+                            <Text style={styles.inviteCodeButtonText}>Yenile</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+
               <View style={styles.cardSection}>
                 <Text style={styles.sectionTitle}>Vergi Bilgileri</Text>
                 <View style={styles.infoRow}>
@@ -137,8 +235,7 @@ export default function CompanyInfoScreen() {
               </View>
 
               <View style={styles.cardSection}>
-                <Text style={styles.sectionTitle}>İlet
-                </Text>
+                <Text style={styles.sectionTitle}>İletişim</Text>
                 <View style={styles.infoRow}>
                   <View style={styles.infoIcon}>
                     <Feather name="phone" size={20} color="#666666" />
@@ -358,5 +455,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Davet kodu için yeni stiller
+  inviteCodeContainer: {
+    backgroundColor: '#F9F9F9',
+    borderRadius: 8,
+    padding: 16,
+  },
+  inviteCodeText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 2,
+    color: '#333333',
+    marginBottom: 16,
+  },
+  inviteCodeActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  inviteCodeButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginHorizontal: 8,
+  },
+  refreshButton: {
+    backgroundColor: '#E6A05F',
+  },
+  inviteCodeButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 8,
   }
 });
