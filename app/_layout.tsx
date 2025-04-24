@@ -25,6 +25,11 @@ const isAdminPage = (path) => {
          false;
 };
 
+// Kullanıcının register sayfasına özel erişimine izin ver
+const isSpecialPublicPage = (path) => {
+  return path === '/register' || path === '/forgot-password';
+};
+
 // Auth routing wrapper
 function AuthWrapper({ children }) {
   const { currentUser, isAdmin, loading, userData } = useAuth();
@@ -64,14 +69,14 @@ function AuthWrapper({ children }) {
     } else {
       // Kullanıcı giriş yapmış (logged in)
       
-      // Eğer kullanıcı public bir sayfadaysa (login, register vb.)
-      if (isPublicPage(currentPath)) {
-        // Onu firma durumuna ve rolüne göre yönlendir
+      // SADECE login sayfasındaysa yönlendir
+      if (currentPath === '/login') {
+        // Firma ID'sine göre yönlendir
         if (!userData?.firma_id) {
-          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), no firma_id, redirecting to /first-page`);
+          console.log(`AuthWrapper: Logged in user on login page, redirecting to /first-page`);
           router.replace('/first-page');
         } else {
-          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), has firma_id, redirecting based on role`);
+          console.log(`AuthWrapper: Logged in user on login page, redirecting based on role`);
           if (isAdmin) {
             router.replace('/admin-home');
           } else {
@@ -79,7 +84,8 @@ function AuthWrapper({ children }) {
           }
         }
       }
-      // Eğer kullanıcı admin olmayan bir sayfada ve admin yetkisi yoksa
+      
+      // Admin sayfalarını koruma (Bu kısım doğru görünüyor)
       else if (isAdminPage(currentPath) && !isAdmin) {
         console.log(`AuthWrapper: Non-admin user on admin page (${currentPath}), redirecting to /home`);
         // Firma ID'si olmayan kullanıcıyı first-page'e yönlendirmek daha mantıklı olabilir
