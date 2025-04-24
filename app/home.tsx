@@ -16,7 +16,7 @@ export default function UserHomeScreen() {
       setLoading(true);
       console.log("Logout işlemi başladı...");
       
-      // Önce çıkış kaydı oluştur (şu anda oturum açıkken)
+      // İsteğe bağlı: Önce çıkış kaydı oluştur
       try {
         if (currentUser?.uid) {
           const timestamp = new Date().getTime();
@@ -25,7 +25,7 @@ export default function UserHomeScreen() {
           
           const logoutRecordRef = doc(db, "Giris_Kayitlari", uniqueId);
           await setDoc(logoutRecordRef, {
-            eylem_tarihi: new Date(),
+            eylem_tarihi: new Date(), // Veya serverTimestamp()
             eylem_turu: "çıkış",
             durumu: "başarılı",
             kullanici_id: currentUser.uid,
@@ -35,27 +35,25 @@ export default function UserHomeScreen() {
         }
       } catch (logError) {
         console.error("Çıkış kaydı oluşturulurken hata:", logError);
+        // Kayıt hatası olsa bile çıkışa devam et
       }
       
-      // AuthContext'teki logout fonksiyonunu çağır ve hatayı yakala
-      try {
-        const result = await logout();
-        console.log("AuthContext logout sonucu:", result);
-      } catch (logoutError) {
-        console.error("Auth logout hatası:", logoutError);
-      }
+      // AuthContext'teki logout fonksiyonunu çağır
+      await logout(); // Bu fonksiyon state'i güncelleyecek
+      console.log("AuthContext logout tamamlandı.");
       
-      // Her durumda login sayfasına yönlendir
-      router.replace('/'); // Change '/login' to '/'
+      // --- YÖNLENDİRMEYİ BURADAN KALDIRIN ---
+      // router.replace('/'); 
       
-      setTimeout(() => {
-        setLoading(false);
-      }, 500);
+      // setLoading(false) muhtemelen gereksiz olacak çünkü AuthWrapper yönlendirecek
+      // setTimeout(() => {
+      //   setLoading(false);
+      // }, 500);
       
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Logout error in component:", error);
       Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
-      setLoading(false);
+      setLoading(false); // Hata durumunda loading'i kapat
     }
   };
   

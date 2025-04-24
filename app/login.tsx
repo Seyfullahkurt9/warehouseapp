@@ -52,15 +52,33 @@ export default function LoginScreen() {
         
         console.log("Başarılı giriş kaydı oluşturuldu:", uniqueId);
         
+        // Kullanıcı verilerini güvenli bir şekilde sakla
+        const safeUserData = {
+          uid: user.uid,
+          email: user.email,
+          firma_id: userData?.firma_id || '',
+          isAdmin: isAdmin || false,
+        };
+        console.log("💾 AsyncStorage'a kaydediliyor:", Object.keys(safeUserData));
+
         // AsyncStorage'a kaydet
-        await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        
-        // Yönlendirme yap
-        if (isAdmin) {
-          router.replace('/admin-home');
+        await AsyncStorage.setItem('userData', JSON.stringify(safeUserData));
+        console.log("✅ AsyncStorage kaydı tamamlandı");
+
+        // Yönlendirme Mantığı: firma_id kontrolü
+        if (!safeUserData.firma_id) {
+          console.log("🔄 Kullanıcının firma ID'si yok, first-page'e yönlendiriliyor...");
+          router.replace('/first-page'); 
         } else {
-          router.replace('/home');
+          console.log(`🔄 Kullanıcının firma ID'si var (${safeUserData.firma_id}), isAdmin: ${isAdmin}`);
+          // Mevcut yönlendirme mantığı (admin veya normal kullanıcı)
+          if (isAdmin) { // Use the 'isAdmin' variable directly
+            router.replace('/admin-home');
+          } else {
+            router.replace('/home');
+          }
         }
+        console.log("✅ Yönlendirme tamamlandı");
         
       } catch (logError) {
         console.error("Giriş kaydı eklenirken hata:", logError);
@@ -72,9 +90,9 @@ export default function LoginScreen() {
           router.replace('/home');
         }
       }
-    } catch (error) {
+    } catch (caughtError: unknown) {
       // Sadece konsola loglama yap, kullanıcı arayüzünde hiç hata gösterme
-      console.log("Giriş başarısız, hata:", error);
+      console.log("Giriş başarısız, hata:", caughtError);
       
       // Alert kısmını tamamen kaldırıyoruz
       // if (error instanceof FirebaseError) {

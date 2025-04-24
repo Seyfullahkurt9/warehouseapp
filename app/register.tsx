@@ -48,14 +48,15 @@ export default function RegisterScreen() {
         eposta: email,
         telefon: phoneNumber,
         is_unvani: "",
-        firma_id: "ornek_firma",
+        firma_id: "", // Set firma_id to empty string
         yetki_id: ""
       }, user.uid);  // Auth UID'sini burada kullan
       
       // Log the action using our helper function
       await logUserAction(user.uid, "Kullanıcı kaydı");
       
-      // Giris_Kayitlari tablosuna kayıt oluştur
+      // Giris_Kayitlari tablosuna kayıt oluşturma kodunu kaldır veya firma_id'yi boş bırak
+      /* 
       try {
         const girisKayitlariRef = collection(db, "Giris_Kayitlari");
         await addDoc(girisKayitlariRef, {
@@ -63,13 +64,13 @@ export default function RegisterScreen() {
           eylem_turu: "kayıt",
           durumu: "başarılı",
           kullanici_id: user.uid,
-          firma_id: "ornek_firma" // Yeni kullanıcı için varsayılan firma_id
+          firma_id: "" // Ensure this is also empty or remove the log entry
         });
         console.log("Kayıt işlemi Giris_Kayitlari tablosuna eklendi");
       } catch (logError) {
         console.error("Kayıt işlemi Giris_Kayitlari tablosuna eklenirken hata:", logError);
-        // Bu hata ana işlemi etkilemesin, sadece loglayalım
       }
+      */
 
       // Redirect to verification page
       router.push('/verification');

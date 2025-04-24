@@ -1,18 +1,29 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  StatusBar,
+  Alert // Import Alert
+} from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
-export default function FirstPage() {
-  // Şimdilik sadece butonların varlığını göstereceğiz, gerçek fonksiyonları sonra eklenecek
-  const handleCreateCompany = () => {
-    // İleride create-company sayfasına yönlendirme yapılacak
-    alert('Firma Oluştur sayfası yapım aşamasında');
-  };
+export default function FirstPageScreen() {
+  const { logout, currentUser } = useAuth(); // Get logout function and currentUser
 
-  const handleJoinCompany = () => {
-    // İleride join-company sayfasına yönlendirme yapılacak
-    alert('Firmaya Katıl sayfası yapım aşamasında');
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // AuthWrapper should handle the redirection to index or login
+      console.log("Logout successful from first-page");
+    } catch (error) {
+      console.error("Logout error from first-page:", error);
+      Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
+    }
   };
 
   return (
@@ -22,36 +33,39 @@ export default function FirstPage() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>TRACKIT</Text>
-          <Text style={styles.headerSubtitle}>Firma Seçimi</Text>
+          {/* Add Logout Button */}
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={26} color="#E6A05F" />
+          </TouchableOpacity>
         </View>
 
+        {/* Content */}
         <View style={styles.contentContainer}>
           <Text style={styles.welcomeText}>Hoş Geldiniz!</Text>
           <Text style={styles.instructionText}>
-            Devam etmek için lütfen yeni bir firma oluşturun veya mevcut bir firmaya katılın.
+            Devam etmek için lütfen bir firma oluşturun veya mevcut bir firmaya katılın.
           </Text>
 
-          {/* Firma Oluştur Butonu */}
+          {/* Action Buttons */}
           <TouchableOpacity 
             style={[styles.actionButton, styles.createButton]}
-            onPress={handleCreateCompany}
+            onPress={() => router.push('/create-company')} // Assuming you have this route
           >
-            <Ionicons name="business-outline" size={32} color="#FFFFFF" style={styles.buttonIcon} />
+            <Ionicons name="business-outline" size={30} color="#FFFFFF" style={styles.buttonIcon} />
             <View style={styles.buttonTextContainer}>
               <Text style={styles.buttonTitle}>Firma Oluştur</Text>
-              <Text style={styles.buttonDescription}>Yeni bir firma hesabı oluşturun</Text>
+              <Text style={styles.buttonDescription}>Yeni bir firma hesabı başlatın.</Text>
             </View>
           </TouchableOpacity>
 
-          {/* Firmaya Katıl Butonu */}
           <TouchableOpacity 
             style={[styles.actionButton, styles.joinButton]}
-            onPress={handleJoinCompany}
+            onPress={() => router.push('/join-company')} // Assuming you have this route
           >
-            <Ionicons name="people-outline" size={32} color="#FFFFFF" style={styles.buttonIcon} />
+            <Ionicons name="person-add-outline" size={30} color="#FFFFFF" style={styles.buttonIcon} />
             <View style={styles.buttonTextContainer}>
               <Text style={styles.buttonTitle}>Firmaya Katıl</Text>
-              <Text style={styles.buttonDescription}>Davet kodu ile mevcut bir firmaya katılın</Text>
+              <Text style={styles.buttonDescription}>Mevcut bir firmaya davet kodu ile katılın.</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -67,23 +81,28 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: 20, // Adjusted padding
   },
   header: {
+    flexDirection: 'row', // Make header items align horizontally
+    justifyContent: 'center', // Center title horizontally
     alignItems: 'center',
     paddingVertical: 16,
+    paddingHorizontal: 20, // Add horizontal padding
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
+    position: 'relative', // Needed for absolute positioning of logout button
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#222222',
   },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#E6A05F',
-    marginTop: 4,
+  // Removed headerSubtitle as it wasn't in the original code snippet
+  logoutButton: {
+    position: 'absolute', // Position button absolutely
+    right: 20, // Align to the right
+    padding: 5, // Add padding for easier tapping
   },
   contentContainer: {
     flex: 1,

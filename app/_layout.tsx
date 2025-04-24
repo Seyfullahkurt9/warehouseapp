@@ -27,41 +27,77 @@ const isAdminPage = (path) => {
 
 // Auth routing wrapper
 function AuthWrapper({ children }) {
-  const { currentUser, isAdmin, loading } = useAuth();
+  const { currentUser, isAdmin, loading, userData } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
-    if (loading) return;
-    
+    const isLoading = loading; // boolean
+    // Array boş mu kontrolü
+    const hasNoSegments = (segments.length as number) === 0;
+
+    // Yükleniyorsa veya segmentler henüz hazır değilse bekle
+    // Ayrı ayrı kontrol et
+    if (isLoading) { 
+      console.log("AuthWrapper: Loading is true, returning.");
+      return;
+    }
+    if (hasNoSegments) {
+      console.log("AuthWrapper: Segments array is empty, returning.");
+      return;
+    }
+
+    // Eğer buraya ulaşıldıysa, isLoading false VE hasNoSegments false demektir.
     const currentPath = '/' + segments.join('/');
-    
+    console.log(`AuthWrapper Check: currentUser=${!!currentUser}, isAdmin=${isAdmin}, loading=${loading}, path=${currentPath}, userData=${JSON.stringify(userData)}`);
+
     if (!currentUser) {
-      // Kullanıcı giriş yapmamışsa ve korunmuş bir sayfada ise, login'e yönlendir
-      if (!isPublicPage(currentPath)) {
-        console.log("Yetkisiz erişim, login'e yönlendiriliyor");
-        router.replace('/login');
+      // Kullanıcı giriş yapmamış (logged out)
+      // Eğer korunmuş bir sayfadaysa (public değil VE index değilse), login'e yönlendir
+      if (!isPublicPage(currentPath) && currentPath !== '/') {
+         console.log(`AuthWrapper: Logged out user on protected page (${currentPath}), redirecting to /login`);
+         router.replace('/login');
+      } else {
+         console.log(`AuthWrapper: Logged out user on public page or index (${currentPath}), allowing navigation.`);
+         // Kullanıcı çıkış yapmış ve public bir sayfada veya index'te, dokunma.
       }
     } else {
-      // Kullanıcı giriş yapmışsa
+      // Kullanıcı giriş yapmış (logged in)
       
-      // Admin sayfalarını koruma
-      if (isAdminPage(currentPath) && !isAdmin) {
-        console.log("Admin yetkisi yok, ana sayfaya yönlendiriliyor");
-        router.replace('/home');
-      }
-      
-      // Kullanıcı giriş yapmış ve auth sayfalarındaysa ana sayfaya yönlendir
+      // Eğer kullanıcı public bir sayfadaysa (login, register vb.)
       if (isPublicPage(currentPath)) {
-        console.log("Zaten giriş yapılmış, ana sayfaya yönlendiriliyor");
-        router.replace('/home');
+        // Onu firma durumuna ve rolüne göre yönlendir
+        if (!userData?.firma_id) {
+          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), no firma_id, redirecting to /first-page`);
+          router.replace('/first-page');
+        } else {
+          console.log(`AuthWrapper: Logged in user on public page (${currentPath}), has firma_id, redirecting based on role`);
+          if (isAdmin) {
+            router.replace('/admin-home');
+          } else {
+            router.replace('/home');
+          }
+        }
+      }
+      // Eğer kullanıcı admin olmayan bir sayfada ve admin yetkisi yoksa
+      else if (isAdminPage(currentPath) && !isAdmin) {
+        console.log(`AuthWrapper: Non-admin user on admin page (${currentPath}), redirecting to /home`);
+        // Firma ID'si olmayan kullanıcıyı first-page'e yönlendirmek daha mantıklı olabilir
+        if (!userData?.firma_id) {
+           router.replace('/first-page');
+        } else {
+           router.replace('/home');
+        }
+      }
+      // Kullanıcı giriş yapmış ve uygun bir sayfada (veya index'te), dokunma.
+      else {
+         console.log(`AuthWrapper: Logged in user on appropriate page (${currentPath}), allowing navigation.`);
       }
     }
-  }, [currentUser, isAdmin, loading, segments]);
+  }, [currentUser, isAdmin, loading, segments, userData]); // Bağımlılıklar doğru
 
   if (loading) {
-    // Loading ekranı göster
-    return <LoadingScreen />; 
+    return <LoadingScreen />;
   }
 
   return children;
