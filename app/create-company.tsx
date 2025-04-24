@@ -140,22 +140,21 @@ export default function CreateCompanyScreen() {
         ...userData,
         ...userUpdates
       });
-      
-      // Log action
-      const eylemlerRef = collection(db, "Eylemler");
-      await addDoc(eylemlerRef, {
-        eylem_tarihi: new Date(),
-        eylem_aciklamasi: `"${formData.firma_ismi}" isimli firma oluşturuldu.`,
-        kullanici_id: currentUser.uid,
-        firma_id: firmaId,
-        kullanici_adi: `${userData?.isim || ''} ${userData?.soyisim || ''}`.trim() || 'Bilinmeyen Kullanıcı'
-      });
 
-      // Show success message with more detailed information
+      // Daha güvenli yönlendirme için tam sayfa yenileme
       Alert.alert(
         "Başarılı", 
         `"${formData.firma_ismi}" firması başarıyla oluşturuldu.\nArtık firma yöneticisisiniz.`, 
-        [{ text: "Tamam", onPress: () => router.replace('/admin-home') }] // admin-home'a yönlendir!
+        [{ 
+          text: "Tamam", 
+          onPress: () => {
+            // Hafızayı tamamen yenilemek için sayfa yenile
+            router.replace('/'); // Önce index'e git
+            setTimeout(() => {
+              router.replace('/admin-home'); // Sonra admin-home'a git
+            }, 500);
+          } 
+        }]
       );
     } catch (error) {
       console.error("Firma oluşturulurken hata:", error);

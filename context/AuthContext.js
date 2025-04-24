@@ -225,7 +225,12 @@ export function AuthProvider({ children }) {
       await setDoc(doc(db, "Kullanicilar", currentUser.uid), newData, { merge: true });
       
       // Context'i güncelle
-      setUserData((prevData) => ({...prevData, ...newData}));
+      setUserData((prevData) => {
+        const updatedData = {...prevData, ...newData};
+        // isAdmin değerini özel olarak güncelle
+        setIsAdmin(updatedData.yetki_id === "admin");
+        return updatedData;
+      });
       
       // Önbelleği güncelle
       const updatedData = {...userData, ...newData};
