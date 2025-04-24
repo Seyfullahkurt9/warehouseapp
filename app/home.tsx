@@ -46,7 +46,7 @@ export default function UserHomeScreen() {
       }
       
       // Her durumda login sayfasına yönlendir
-      router.replace('/login');
+      router.replace('/'); // Change '/login' to '/'
       
       setTimeout(() => {
         setLoading(false);
