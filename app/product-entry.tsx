@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -7,125 +7,363 @@ import {
   SafeAreaView, 
   StatusBar, 
   FlatList,
-  TextInput,
   Modal,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
+  Alert,
   ScrollView,
-  Image
+  TextInput
 } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { Ionicons, Feather } from '@expo/vector-icons';
+import { collection, query, where, getDocs, doc, getDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { useAuth } from '../context/AuthContext';
 
-// Sample product data
-const initialProductData = [
-  {
-    id: '1',
-    code: 'STK001',
-    name: 'Çelik Matkap Ucu',
-    unit: 'Adet',
-    warehouseNo: '1',
-    quantity: '40',
-  },
-  {
-    id: '2',
-    code: 'STK002',
-    name: 'Endüstriyel Boya',
-    unit: 'Litre',
-    warehouseNo: '2',
-    quantity: '25',
-  },
-  {
-    id: '3',
-    code: 'STK003',
-    name: 'Ahşap Panel',
-    unit: 'm²',
-    warehouseNo: '1',
-    quantity: '120',
-  },
-  {
-    id: '4',
-    code: 'STK004',
-    name: 'Elektrik Kablosu',
-    unit: 'Metre',
-    warehouseNo: '3',
-    quantity: '500',
-  },
-  {
-    id: '5',
-    code: 'STK005',
-    name: 'LED Aydınlatma',
-    unit: 'Adet',
-    warehouseNo: '2',
-    quantity: '75',
-  },
-];
+// Define stock movement type
+interface StockMovement {
+  id: string;
+  tarih: any;
+  islem_turu: string;
+  aciklama: string;
+  miktar: number;
+  sonuc_miktar: number;
+  stok_id: string;
+  depo_id: string;
+  firma_id: string;
+  kaynak_id?: string; // Tedarikçi ID'si
+  urun_adi?: string;
+  birim?: string;
+  depo_adi?: string;
+  tedarikci_adi?: string;
+}
 
 export default function ProductEntryScreen() {
-  const [productData, setProductData] = useState(initialProductData);
-  const [showAddProduct, setShowAddProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({
-    code: '',
-    name: '',
-    barcode: '',  // Add this new property
-    unit: '',
-    warehouseNo: '',
-    quantity: '',
-    image: null as string | null,   // Update to allow string or null
-  });
+  const { userData, currentUser } = useAuth();
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
-  const addProduct = () => {
-    if (newProduct.code && newProduct.name && newProduct.unit) {
-      setProductData([
-        ...productData,
-        {
-          id: (productData.length + 1).toString(),
-          ...newProduct
-        }
-      ]);
-      
-      // Reset form
-      setNewProduct({
-        code: '',
-        name: '',
-        barcode: '',  // Add this new property
-        unit: '',
-        warehouseNo: '',
-        quantity: '',
-        image: null,   // Add this new property
+  // Search and filter states
+  const [filteredMovements, setFilteredMovements] = useState<StockMovement[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  
+  // Filter values
+  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
+  const [warehouseFilter, setWarehouseFilter] = useState<string | null>(null);
+  const [supplierFilter, setSupplierFilter] = useState<string | null>(null);
+  
+  // Filter options data
+  const [warehouses, setWarehouses] = useState<{id: string, name: string}[]>([]);
+  const [suppliers, setSuppliers] = useState<{id: string, name: string}[]>([]);
+  
+  // Details modal state
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null);
+  
+  // Delete confirmation
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deletingMovement, setDeletingMovement] = useState(false);
+
+  // Format date function
+  const formatDate = (dateObject: any): string => {
+    if (!dateObject) return '-';
+    
+    try {
+      const date = dateObject.toDate ? dateObject.toDate() : new Date(dateObject);
+      return date.toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
       });
-      
-      // Close modal
-      setShowAddProduct(false);
-      
-      // Navigate to success screen
-      router.push('./product-success');
-    } else {
-      alert('Lütfen gerekli alanları doldurun');
+    } catch (error) {
+      return '-';
     }
   };
 
-  const pickImage = async () => {
-    // Request permission
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  // Update filteredMovements when stockMovements changes
+  useEffect(() => {
+    setFilteredMovements(stockMovements);
+  }, [stockMovements]);
+
+  // Fetch filter options (warehouses and suppliers)
+  useEffect(() => {
+    const fetchFilterOptions = async () => {
+      if (!userData?.firma_id) return;
+      
+      try {
+        // Fetch warehouses
+        const warehousesRef = collection(db, "Depolar");
+        const warehousesQuery = query(warehousesRef, where("firma_id", "==", userData.firma_id));
+        const warehousesSnapshot = await getDocs(warehousesQuery);
+        
+        const warehousesList = warehousesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().depo_adi || `Depo ${doc.id}`
+        }));
+        setWarehouses(warehousesList);
+        
+        // Fetch suppliers
+        const suppliersRef = collection(db, "Tedarikciler");
+        const suppliersQuery = query(suppliersRef, where("firma_id", "==", userData.firma_id));
+        const suppliersSnapshot = await getDocs(suppliersQuery);
+        
+        const suppliersList = suppliersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().sirket_ismi || `Tedarikçi ${doc.id}`
+        }));
+        setSuppliers(suppliersList);
+      } catch (error) {
+        console.error("Filter options yüklenirken hata:", error);
+      }
+    };
     
-    if (permissionResult.granted === false) {
-      alert("Görsel seçmek için izin vermeniz gerekmektedir!");
+    fetchFilterOptions();
+  }, [userData?.firma_id]);
+
+  // Fetch stock movements on component mount
+  useEffect(() => {
+    const fetchStockMovements = async () => {
+      try {
+        if (!userData?.firma_id) {
+          setError("Kullanıcı firma bilgisi bulunamadı");
+          setLoading(false);
+          return;
+        }
+
+        // Query stock movements where operation type is 'ürün_girişi'
+        const movementsRef = collection(db, "Stok_Hareketleri");
+        const q = query(
+          movementsRef, 
+          where("firma_id", "==", userData.firma_id),
+          where("islem_turu", "==", "ürün_girişi")
+        );
+        
+        const querySnapshot = await getDocs(q);
+        const movementsList: StockMovement[] = [];
+        
+        // For each movement, fetch additional data from Stoklar table
+        const fetchPromises = querySnapshot.docs.map(async (docSnap) => {
+          const movementData = docSnap.data() as StockMovement;
+          const movement: StockMovement = {
+            ...movementData,
+            id: docSnap.id
+          };
+          
+          try {
+            // Get product details from Stoklar
+            if (movement.stok_id) {
+              const stockRef = doc(db, "Stoklar", movement.stok_id);
+              const stockSnap = await getDoc(stockRef);
+              
+              if (stockSnap.exists()) {
+                const stockData = stockSnap.data();
+                movement.urun_adi = stockData.urun_adi;
+                movement.birim = stockData.birim;
+              }
+            }
+            
+            // Get warehouse name
+            if (movement.depo_id) {
+              const warehouseRef = doc(db, "Depolar", movement.depo_id);
+              const warehouseSnap = await getDoc(warehouseRef);
+              
+              if (warehouseSnap.exists()) {
+                movement.depo_adi = warehouseSnap.data().depo_adi;
+              }
+            }
+            
+            // Get supplier name
+            if (movement.kaynak_id) {
+              const supplierRef = doc(db, "Tedarikciler", movement.kaynak_id);
+              const supplierSnap = await getDoc(supplierRef);
+              
+              if (supplierSnap.exists()) {
+                movement.tedarikci_adi = supplierSnap.data().sirket_ismi;
+              }
+            }
+            
+            movementsList.push(movement);
+          } catch (err) {
+            console.error("Error fetching related data:", err);
+            movementsList.push(movement);
+          }
+        });
+        
+        await Promise.all(fetchPromises);
+        
+        // Sort movements by date, newest first
+        movementsList.sort((a, b) => {
+          const dateA = a.tarih?.toDate ? a.tarih.toDate() : new Date(a.tarih);
+          const dateB = b.tarih?.toDate ? b.tarih.toDate() : new Date(b.tarih);
+          return dateB - dateA;
+        });
+        
+        setStockMovements(movementsList);
+        setFilteredMovements(movementsList);
+        setLoading(false);
+      } catch (error) {
+        console.error("Stock movements yüklenirken hata:", error);
+        
+        let errorMessage = "Bilinmeyen hata";
+        if (error instanceof Error) {
+          errorMessage = error.message;
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        }
+        
+        setError("Stok hareketleri yüklenemedi: " + errorMessage);
+        setLoading(false);
+      }
+    };
+
+    fetchStockMovements();
+  }, [userData?.firma_id]);
+
+  // Search function
+  const handleSearch = (text: string) => {
+    setSearchText(text);
+    
+    if (!text.trim()) {
+      // If search is empty, reset to current filters
+      applyFilters();
       return;
     }
+    
+    // Filter by search text
+    const searchLower = text.toLowerCase();
+    const filtered = stockMovements.filter(movement => 
+      (movement.urun_adi && movement.urun_adi.toLowerCase().includes(searchLower)) ||
+      (movement.depo_adi && movement.depo_adi.toLowerCase().includes(searchLower)) ||
+      (movement.tedarikci_adi && movement.tedarikci_adi.toLowerCase().includes(searchLower)) ||
+      (movement.aciklama && movement.aciklama.toLowerCase().includes(searchLower))
+    );
+    
+    setFilteredMovements(filtered);
+  };
   
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    });
+  // Apply all filters
+  const applyFilters = () => {
+    let filtered = [...stockMovements];
+    
+    // Apply date filter
+    if (dateFilter.startDate || dateFilter.endDate) {
+      filtered = filtered.filter(movement => {
+        const movementDate = movement.tarih?.toDate ? movement.tarih.toDate() : new Date(movement.tarih);
+        
+        // Convert dates for comparison
+        const startDate = dateFilter.startDate ? new Date(dateFilter.startDate) : null;
+        const endDate = dateFilter.endDate ? new Date(dateFilter.endDate) : null;
+        
+        // Set end date to end of day
+        if (endDate) {
+          endDate.setHours(23, 59, 59, 999);
+        }
+        
+        if (startDate && endDate) {
+          return movementDate >= startDate && movementDate <= endDate;
+        } else if (startDate) {
+          return movementDate >= startDate;
+        } else if (endDate) {
+          return movementDate <= endDate;
+        }
+        
+        return true;
+      });
+    }
+    
+    // Apply warehouse filter
+    if (warehouseFilter) {
+      filtered = filtered.filter(movement => movement.depo_id === warehouseFilter);
+    }
+    
+    // Apply supplier filter
+    if (supplierFilter) {
+      filtered = filtered.filter(movement => movement.kaynak_id === supplierFilter);
+    }
+    
+    setFilteredMovements(filtered);
+    setFilterModalVisible(false);
+  };
   
-    if (!result.canceled) {
-      setNewProduct({...newProduct, image: result.assets[0].uri});
+  // Reset all filters
+  const resetFilters = () => {
+    setDateFilter({ startDate: '', endDate: '' });
+    setWarehouseFilter(null);
+    setSupplierFilter(null);
+    setFilteredMovements(stockMovements);
+    setFilterModalVisible(false);
+  };
+
+  // Show movement details
+  const showMovementDetails = (movement: StockMovement) => {
+    setSelectedMovement(movement);
+    setDetailsModalVisible(true);
+  };
+
+  // Delete stock movement
+  const handleDeleteMovement = async () => {
+    if (!selectedMovement) return;
+    
+    try {
+      setDeletingMovement(true);
+      
+      // Delete from Firestore
+      const movementRef = doc(db, "Stok_Hareketleri", selectedMovement.id);
+      await deleteDoc(movementRef);
+      
+      // Add to Eylemler
+      const eylemlerRef = collection(db, "Eylemler");
+      await addDoc(eylemlerRef, {
+        eylem_tarihi: new Date(),
+        eylem_aciklamasi: `"${selectedMovement.urun_adi || 'Bilinmeyen ürün'}" ürününe ait ${selectedMovement.miktar} ${selectedMovement.birim} giriş kaydı silindi.`,
+        kullanici_id: currentUser?.uid || '',
+        kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı',
+        firma_id: userData?.firma_id || '',
+        islem_turu: 'stok_hareketi_silme',
+        ilgili_belge_id: selectedMovement.id
+      });
+      
+      // Update state
+      const updatedMovements = stockMovements.filter(m => m.id !== selectedMovement.id);
+      setStockMovements(updatedMovements);
+      setFilteredMovements(filteredMovements.filter(m => m.id !== selectedMovement.id));
+      
+      // Close modals
+      setDeleteConfirmVisible(false);
+      setDetailsModalVisible(false);
+      
+      Alert.alert('Başarılı', 'Stok hareketi başarıyla silindi.');
+      
+    } catch (error) {
+      console.error('Stok hareketi silinirken hata:', error);
+      Alert.alert('Hata', 'Stok hareketi silinirken bir sorun oluştu.');
+    } finally {
+      setDeletingMovement(false);
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#E6A05F" />
+        <Text style={styles.loadingText}>Stok hareketleri yükleniyor...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Feather name="alert-circle" size={50} color="#FF6B6B" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => router.replace('/home')}>
+          <Text style={styles.retryButtonText}>Ana Sayfaya Dön</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -142,198 +380,420 @@ export default function ProductEntryScreen() {
             </TouchableOpacity>
             <Text style={styles.screenTitle}>Hizmet/Ürünler Girişi</Text>
             <View style={styles.headerIcons}>
-              <TouchableOpacity style={styles.iconButton}>
-                <Feather name="message-square" size={22} color="#222222" />
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={() => setSearchVisible(!searchVisible)}
+              >
+                <Feather name="search" size={22} color="#222222" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconButton}>
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={() => setFilterModalVisible(true)}
+              >
                 <Feather name="filter" size={22} color="#222222" />
+                {/* Filtreleme aktifse nokta göster */}
+                {(warehouseFilter || supplierFilter || dateFilter.startDate || dateFilter.endDate) && (
+                  <View style={styles.filterDot} />
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
+
+        {/* Search Bar */}
+        {searchVisible && (
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Ara..."
+              placeholderTextColor="#999"
+              value={searchText}
+              onChangeText={handleSearch}
+              autoFocus
+            />
+            <TouchableOpacity 
+              style={styles.searchClearButton}
+              onPress={() => {
+                setSearchText('');
+                handleSearch('');
+              }}
+            >
+              <Ionicons name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Column Headers */}
         <View style={styles.columnHeaders}>
-          <Text style={styles.columnHeader}>Ürün/stok kodu</Text>
-          <Text style={styles.columnHeader}>Ürün/stok adı</Text>
-          <Text style={styles.columnHeader}>Alış/Satış birimi</Text>
-          <Text style={[styles.columnHeader, styles.warehouseColumn]}>Depo no</Text>
-          <Text style={[styles.columnHeader, styles.quantityColumn]}>Stoktaki miktar</Text>
-          <View style={styles.cameraColumn} />
+          <Text style={[styles.columnHeader, styles.dateColumn]}>Tarih</Text>
+          <Text style={[styles.columnHeader, styles.productColumn]}>Ürün Adı</Text>
+          <Text style={[styles.columnHeader, styles.warehouseColumn]}>Depo</Text>
+          <Text style={[styles.columnHeader, styles.quantityColumn]}>Miktar</Text>
+          <Text style={[styles.columnHeader, styles.detailsColumn]}>Detay</Text>
         </View>
 
-        {/* Products List */}
-        <FlatList
-          data={productData}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.productItem}>
-              <Text style={styles.productCode}>{item.code}</Text>
-              <Text style={styles.productName}>{item.name}</Text>
-              <Text style={styles.productUnit}>{item.unit}</Text>
-              <Text style={[styles.productWarehouse, styles.warehouseColumn]}>{item.warehouseNo}</Text>
-              <Text style={[styles.productQuantity, styles.quantityColumn]}>{item.quantity}</Text>
-              <TouchableOpacity style={styles.cameraColumn}>
-                <Feather name="camera" size={18} color="#666666" />
-              </TouchableOpacity>
-            </View>
-          )}
-          contentContainerStyle={styles.listContainer}
-        />
-
-        {/* Floating Action Button */}
-        <TouchableOpacity 
-          style={styles.fab}
-          onPress={() => setShowAddProduct(true)}
-        >
-          <Ionicons name="add" size={30} color="#FFFFFF" />
-        </TouchableOpacity>
-      </SafeAreaView>
-
-      {/* Bottom Tab Navigation */}
-      <View style={styles.tabBarContainer}>
-        <View style={styles.tabBar}>
-          <TouchableOpacity style={styles.tabItem}>
-            <Ionicons name="grid-outline" size={24} color="#666666" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.tabItem}
-            onPress={() => router.replace('/home')}
-          >
-            <Ionicons name="home-outline" size={24} color="#666666" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.tabItem}>
-            <Ionicons name="person-outline" size={24} color="#666666" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Add Product Modal */}
-      <Modal
-        visible={showAddProduct}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowAddProduct(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Yeni Ürün/Hizmet Ekle</Text>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={() => setShowAddProduct(false)}
-              >
-                <Ionicons name="close" size={24} color="#222222" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalForm}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Ürün/stok kodu</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.code}
-                  onChangeText={(text) => setNewProduct({...newProduct, code: text})}
-                  placeholder="Örn: STK006"
-                  placeholderTextColor="#AAAAAA"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Ürün/stok adı</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.name}
-                  onChangeText={(text) => setNewProduct({...newProduct, name: text})}
-                  placeholder="Ürün adını girin"
-                  placeholderTextColor="#AAAAAA"
-                />
-              </View>
-              
-              {/* New Barcode field */}
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Barkod numarası</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.barcode}
-                  onChangeText={(text) => setNewProduct({...newProduct, barcode: text})}
-                  placeholder="Barkod numarasını girin"
-                  placeholderTextColor="#AAAAAA"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Alış/Satış birimi</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.unit}
-                  onChangeText={(text) => setNewProduct({...newProduct, unit: text})}
-                  placeholder="Örn: Adet, Kg, Litre"
-                  placeholderTextColor="#AAAAAA"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Depo no</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.warehouseNo}
-                  onChangeText={(text) => setNewProduct({...newProduct, warehouseNo: text})}
-                  placeholder="Depo numarası"
-                  placeholderTextColor="#AAAAAA"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Stoktaki miktar</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newProduct.quantity}
-                  onChangeText={(text) => setNewProduct({...newProduct, quantity: text})}
-                  placeholder="Başlangıç miktarını girin"
-                  placeholderTextColor="#AAAAAA"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              {/* New Product Image Upload section */}
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Ürün görseli ekle</Text>
+        {filteredMovements.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Feather name="package" size={60} color="#CCCCCC" />
+            <Text style={styles.emptyText}>
+              {stockMovements.length > 0 
+                ? "Arama kriterlerine uygun hareket bulunamadı" 
+                : "Henüz ürün girişi bulunmuyor"}
+            </Text>
+            <Text style={styles.emptySubText}>
+              {stockMovements.length > 0 
+                ? "Filtre kriterlerini değiştirmeyi deneyin" 
+                : "Yeni ürün girişi yapılması gerekiyor"}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredMovements}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.movementItem}>
+                <Text style={[styles.movementDate, styles.dateColumn]}>{formatDate(item.tarih)}</Text>
+                <Text style={[styles.movementProduct, styles.productColumn]} numberOfLines={1} ellipsizeMode="tail">
+                  {item.urun_adi || 'Bilinmeyen Ürün'}
+                </Text>
+                <Text style={[styles.movementWarehouse, styles.warehouseColumn]} numberOfLines={1}>
+                  {item.depo_adi || 'Depo ' + item.depo_id}
+                </Text>
+                <View style={[styles.movementQuantity, styles.quantityColumn]}>
+                  <Text style={styles.quantityText}>
+                    {item.miktar} {item.birim}
+                  </Text>
+                </View>
                 <TouchableOpacity 
-                  style={styles.imageUploadButton}
-                  onPress={pickImage}
+                  style={styles.detailsButton}
+                  onPress={() => showMovementDetails(item)}
                 >
-                  {newProduct.image ? (
-                    <Image 
-                      source={{ uri: newProduct.image }} 
-                      style={{ width: '100%', height: '100%', borderRadius: 8 }} 
-                    />
-                  ) : (
-                    <View style={styles.imageUploadContent}>
-                      <Feather name="camera" size={24} color="#666666" />
-                      <Text style={styles.imageUploadText}>Ürün görseli seçin</Text>
-                    </View>
-                  )}
+                  <View style={styles.detailsIconContainer}>
+                    <Feather name="eye" size={18} color="#666666" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+            contentContainerStyle={styles.listContainer}
+          />
+        )}
+
+        {/* Floating Action Button - Admin için */}
+        {userData?.yetki_id === "admin" && (
+          <TouchableOpacity 
+            style={styles.fab}
+            onPress={() => router.push('/add-product-entry')}
+          >
+            <Ionicons name="add" size={30} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+
+        {/* Bottom Tab Navigation */}
+        <View style={styles.tabBarContainer}>
+          <View style={styles.tabBar}>
+            <TouchableOpacity style={styles.tabItem}>
+              <Ionicons name="grid-outline" size={24} color="#666666" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.tabItem}
+              onPress={() => router.replace('/home')}
+            >
+              <Ionicons name="home-outline" size={24} color="#666666" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.tabItem}>
+              <Ionicons name="person-outline" size={24} color="#666666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Movement Details Modal */}
+        <Modal
+          visible={detailsModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setDetailsModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Stok Hareketi Detayları</Text>
+                <TouchableOpacity 
+                  style={styles.closeButton}
+                  onPress={() => setDetailsModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color="#222222" />
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={addProduct}
-              >
-                <Text style={styles.saveButtonText}>Kaydet</Text>
-              </TouchableOpacity>
-            </ScrollView>
+              {selectedMovement && (
+                <ScrollView style={styles.modalBody}>
+                  {/* Movement Details */}
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Hareket Bilgileri</Text>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>İşlem Türü:</Text>
+                      <Text style={styles.detailValue}>Ürün Girişi</Text>
+                    </View>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Tarih:</Text>
+                      <Text style={styles.detailValue}>{formatDate(selectedMovement.tarih)}</Text>
+                    </View>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Açıklama:</Text>
+                      <Text style={styles.detailValue}>{selectedMovement.aciklama || 'Açıklama yok'}</Text>
+                    </View>
+                  </View>
+
+                  {/* Product Details */}
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Ürün Bilgileri</Text>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Ürün Adı:</Text>
+                      <Text style={styles.detailValue}>{selectedMovement.urun_adi || 'Bilinmeyen Ürün'}</Text>
+                    </View>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Depo:</Text>
+                      <Text style={styles.detailValue}>{selectedMovement.depo_adi || 'Depo ' + selectedMovement.depo_id}</Text>
+                    </View>
+                  </View>
+
+                  {/* Quantity Details */}
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Miktar Bilgileri</Text>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Giriş Miktarı:</Text>
+                      <Text style={styles.detailValue}>
+                        {selectedMovement.miktar} {selectedMovement.birim}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Sonuç Miktar:</Text>
+                      <Text style={styles.detailValue}>
+                        {selectedMovement.sonuc_miktar} {selectedMovement.birim}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Supplier Information (if available) */}
+                  {selectedMovement.kaynak_id && (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailSectionTitle}>Tedarikçi Bilgileri</Text>
+                      
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Tedarikçi:</Text>
+                        <Text style={styles.detailValue}>{selectedMovement.tedarikci_adi || 'Bilinmeyen Tedarikçi'}</Text>
+                      </View>
+                    </View>
+                  )}
+                  
+                  {/* Delete Button - Only for admin */}
+                  {userData?.yetki_id === "admin" && (
+                    <TouchableOpacity 
+                      style={styles.deleteButton}
+                      onPress={() => setDeleteConfirmVisible(true)}
+                    >
+                      <Text style={styles.deleteButtonText}>Hareketi Sil</Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              )}
+            </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        </Modal>
+
+        {/* Filter Modal */}
+        <Modal
+          visible={filterModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setFilterModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, styles.filterModalContent]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Filtreleme</Text>
+                <TouchableOpacity 
+                  style={styles.closeButton}
+                  onPress={() => setFilterModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color="#222222" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView style={styles.modalBody}>
+                {/* Date Range Filter */}
+                <View style={styles.filterSection}>
+                  <Text style={styles.filterSectionTitle}>Tarih Aralığı</Text>
+                  
+                  <View style={styles.dateInputContainer}>
+                    <Text style={styles.dateInputLabel}>Başlangıç:</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      value={dateFilter.startDate}
+                      onChangeText={(text) => setDateFilter({...dateFilter, startDate: text})}
+                      placeholder="GG.AA.YYYY"
+                      placeholderTextColor="#AAAAAA"
+                    />
+                  </View>
+                  
+                  <View style={styles.dateInputContainer}>
+                    <Text style={styles.dateInputLabel}>Bitiş:</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      value={dateFilter.endDate}
+                      onChangeText={(text) => setDateFilter({...dateFilter, endDate: text})}
+                      placeholder="GG.AA.YYYY"
+                      placeholderTextColor="#AAAAAA"
+                    />
+                  </View>
+                </View>
+                
+                {/* Warehouse Filter */}
+                <View style={styles.filterSection}>
+                  <Text style={styles.filterSectionTitle}>Depo</Text>
+                  
+                  <ScrollView style={styles.optionList} nestedScrollEnabled={true}>
+                    <TouchableOpacity 
+                      style={[
+                        styles.filterOption, 
+                        warehouseFilter === null && styles.selectedFilterOption
+                      ]}
+                      onPress={() => setWarehouseFilter(null)}
+                    >
+                      <Text style={styles.filterOptionText}>Tümü</Text>
+                      {warehouseFilter === null && (
+                        <Ionicons name="checkmark" size={20} color="#E6A05F" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    {warehouses.map(warehouse => (
+                      <TouchableOpacity 
+                        key={warehouse.id}
+                        style={[
+                          styles.filterOption, 
+                          warehouseFilter === warehouse.id && styles.selectedFilterOption
+                        ]}
+                        onPress={() => setWarehouseFilter(warehouse.id)}
+                      >
+                        <Text style={styles.filterOptionText}>{warehouse.name}</Text>
+                        {warehouseFilter === warehouse.id && (
+                          <Ionicons name="checkmark" size={20} color="#E6A05F" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                
+                {/* Supplier Filter */}
+                <View style={styles.filterSection}>
+                  <Text style={styles.filterSectionTitle}>Tedarikçi</Text>
+                  
+                  <ScrollView style={styles.optionList} nestedScrollEnabled={true}>
+                    <TouchableOpacity 
+                      style={[
+                        styles.filterOption, 
+                        supplierFilter === null && styles.selectedFilterOption
+                      ]}
+                      onPress={() => setSupplierFilter(null)}
+                    >
+                      <Text style={styles.filterOptionText}>Tümü</Text>
+                      {supplierFilter === null && (
+                        <Ionicons name="checkmark" size={20} color="#E6A05F" />
+                      )}
+                    </TouchableOpacity>
+                    
+                    {suppliers.map(supplier => (
+                      <TouchableOpacity 
+                        key={supplier.id}
+                        style={[
+                          styles.filterOption, 
+                          supplierFilter === supplier.id && styles.selectedFilterOption
+                        ]}
+                        onPress={() => setSupplierFilter(supplier.id)}
+                      >
+                        <Text style={styles.filterOptionText}>{supplier.name}</Text>
+                        {supplierFilter === supplier.id && (
+                          <Ionicons name="checkmark" size={20} color="#E6A05F" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+                
+                {/* Filter Actions */}
+                <View style={styles.filterActions}>
+                  <TouchableOpacity 
+                    style={styles.resetButton}
+                    onPress={resetFilters}
+                  >
+                    <Text style={styles.resetButtonText}>Filtreleri Temizle</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.applyButton}
+                    onPress={applyFilters}
+                  >
+                    <Text style={styles.applyButtonText}>Uygula</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Delete Confirmation Modal */}
+        <Modal
+          visible={deleteConfirmVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setDeleteConfirmVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.confirmModalContent}>
+              <View style={styles.confirmModalHeader}>
+                <Text style={styles.confirmModalTitle}>Stok Hareketini Sil</Text>
+              </View>
+              
+              <View style={styles.confirmModalBody}>
+                <Text style={styles.confirmText}>
+                  Bu stok hareketini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+                </Text>
+                
+                <View style={styles.confirmButtons}>
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={() => setDeleteConfirmVisible(false)}
+                    disabled={deletingMovement}
+                  >
+                    <Text style={styles.cancelButtonText}>İptal</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.confirmDeleteButton}
+                    onPress={handleDeleteMovement}
+                    disabled={deletingMovement}
+                  >
+                    {deletingMovement ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.confirmDeleteButtonText}>Sil</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
     </View>
   );
 }
@@ -342,6 +802,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666666',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#FF6B6B',
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#E6A05F',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   safeArea: {
     flex: 1,
@@ -381,6 +868,7 @@ const styles = StyleSheet.create({
   iconButton: {
     padding: 6,
     marginLeft: 8,
+    position: 'relative',
   },
   columnHeaders: {
     flexDirection: 'row',
@@ -391,29 +879,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   columnHeader: {
-    flex: 2,
     fontSize: 12,
     color: '#888888',
     fontWeight: '500',
-    marginRight: 8,
+  },
+  dateColumn: {
+    flex: 1.2,
+  },
+  productColumn: {
+    flex: 2,
   },
   warehouseColumn: {
     flex: 1,
-    textAlign: 'center',
   },
   quantityColumn: {
-    flex: 1.5,
-    textAlign: 'right',
-  },
-  cameraColumn: {
-    width: 30,
+    flex: 1.2,
     alignItems: 'center',
+  },
+  detailsColumn: {
+    width: 50,
+    alignItems: 'center',
+  },
+  emptyState: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#666666',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
   },
   listContainer: {
-    paddingBottom: 80, // Give space for FAB
+    paddingBottom: 80,
   },
-  productItem: {
+  movementItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -421,52 +928,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  productCode: {
+  movementDate: {
+    flex: 1.2,
+    fontSize: 14,
+    color: '#666666',
+  },
+  movementProduct: {
     flex: 2,
     fontSize: 14,
     color: '#333333',
-    marginRight: 8,
+    fontWeight: '500',
   },
-  productName: {
-    flex: 2,
-    fontSize: 14,
-    color: '#333333',
-    marginRight: 8,
-  },
-  productUnit: {
-    flex: 2,
-    fontSize: 14,
-    color: '#333333',
-    marginRight: 8,
-  },
-  productWarehouse: {
+  movementWarehouse: {
     flex: 1,
     fontSize: 14,
     color: '#333333',
-    textAlign: 'center',
   },
-  productQuantity: {
-    flex: 1.5,
+  movementQuantity: {
+    flex: 1.2,
+    alignItems: 'center',
+  },
+  quantityText: {
     fontSize: 14,
-    color: '#333333',
-    textAlign: 'right',
+    color: '#E6A05F',
+    fontWeight: '500',
   },
-  fab: {
-    position: 'absolute',
-    bottom: 25,
-    right: 25,
-    width: 56,
-    height: 56,
+  detailsButton: {
+    width: 50,
+    alignItems: 'center',
+  },
+  detailsIconContainer: {
+    width: 32,
+    height: 32,
     borderRadius: 16,
-    backgroundColor: '#E6A05F',
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1,
   },
   tabBarContainer: {
     position: 'absolute',
@@ -498,6 +995,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     width: '90%',
@@ -522,56 +1020,247 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 5,
   },
-  modalForm: {
+  modalBody: {
     padding: 16,
-    maxHeight: '85%',
   },
-  formGroup: {
-    marginBottom: 16,
+  detailSection: {
+    marginBottom: 24,
   },
-  label: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DDDDDD',
-    borderRadius: 8,
-    height: 50,
-    paddingHorizontal: 15,
+  detailSectionTitle: {
     fontSize: 16,
-  },
-  saveButton: {
-    backgroundColor: '#E6A05F',
-    borderRadius: 8,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 10,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
     fontWeight: 'bold',
+    color: '#222222',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
   },
-  imageUploadButton: {
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    height: 50,
+  detailRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  detailLabel: {
+    fontSize: 15,
+    color: '#666666',
+    width: 120,
+  },
+  detailValue: {
+    fontSize: 15,
+    color: '#333333',
+    flex: 1,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 75, // Tab bar'ın üzerinde konumlanması için
+    right: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#E6A05F',
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 10,
+    elevation: 5,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1,
   },
-  imageUploadContent: {
+  
+  // Search styles
+  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
   },
-  imageUploadText: {
-    marginLeft: 10,
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#333333',
+    borderWidth: 1,
+    borderColor: '#DDDDDD',
+  },
+  searchClearButton: {
+    padding: 8,
+    marginLeft: 5,
+  },
+  
+  // Filter dot indicator
+  filterDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E6A05F',
+  },
+  
+  // Filter modal styles
+  filterModalContent: {
+    maxHeight: '80%',
+  },
+  filterSection: {
+    marginBottom: 20,
+  },
+  filterSectionTitle: {
     fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222222',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+    paddingBottom: 8,
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dateInputLabel: {
+    width: 80,
+    fontSize: 15,
     color: '#666666',
+  },
+  dateInput: {
+    flex: 1,
+    height: 40,
+    backgroundColor: '#F9F9F9',
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    color: '#333333',
+  },
+  optionList: {
+    maxHeight: 150,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  selectedFilterOption: {
+    backgroundColor: '#FFF9F2',
+  },
+  filterOptionText: {
+    fontSize: 15,
+    color: '#333333',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  resetButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  resetButtonText: {
+    color: '#666666',
+    fontSize: 15,
+  },
+  applyButton: {
+    flex: 1,
+    backgroundColor: '#E6A05F',
+    borderRadius: 8,
+    padding: 12,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  
+  // Delete button in details
+  deleteButton: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    paddingVertical: 14,
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  
+  // Confirmation modal
+  confirmModalContent: {
+    width: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  confirmModalHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222222',
+    textAlign: 'center',
+  },
+  confirmModalBody: {
+    padding: 20,
+  },
+  confirmText: {
+    fontSize: 16,
+    color: '#333333',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  cancelButtonText: {
+    color: '#666666',
+    fontSize: 16,
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  confirmDeleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

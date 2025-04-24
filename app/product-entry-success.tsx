@@ -10,7 +10,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function ProductExitSuccessScreen() {
+export default function ProductEntrySuccessScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -39,15 +39,15 @@ export default function ProductExitSuccessScreen() {
           </View>
           
           <Text style={styles.successMessage}>
-            Ürün çıkışı başarıyla gerçekleştirilmiştir.
+            Ürün girişi başarıyla gerçekleştirilmiştir.
           </Text>
           
           <TouchableOpacity 
-            onPress={() => router.push('/product-exit')}
+            onPress={() => router.push('/product-entry')}
             style={styles.viewOrdersLink}
           >
             <Text style={styles.viewOrdersText}>
-              Ürün çıkışlarına dönmek için tıklayın
+              Ürün girişlerine dönmek için tıklayın
             </Text>
           </TouchableOpacity>
         </View>

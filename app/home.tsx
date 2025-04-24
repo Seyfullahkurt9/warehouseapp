@@ -73,6 +73,18 @@ export default function UserHomeScreen() {
             
             <TouchableOpacity 
               style={styles.gridCard}
+              onPress={() => router.push('/stocks')}
+            >
+              <View style={styles.cardContent}>
+                <Feather name="package" size={40} color="#666666" />
+                <Text style={styles.cardText}>STOKLAR</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.gridRow}>
+            <TouchableOpacity 
+              style={styles.gridCard}
               onPress={() => router.push('/suppliers')}
             >
               <View style={styles.cardContent}>
@@ -80,10 +92,7 @@ export default function UserHomeScreen() {
                 <Text style={styles.cardText}>TEDARİKÇİLER</Text>
               </View>
             </TouchableOpacity>
-          </View>
-          
-          {/* Müşteriler ve Depolar Satırı - değiştirildi */}
-          <View style={styles.gridRow}>
+
             <TouchableOpacity 
               style={styles.gridCard}
               onPress={() => router.push('/customers')}
@@ -93,7 +102,9 @@ export default function UserHomeScreen() {
                 <Text style={styles.cardText}>MÜŞTERİLER</Text>
               </View>
             </TouchableOpacity>
-            
+          </View>
+          
+          <View style={styles.gridRow}>
             <TouchableOpacity 
               style={styles.gridCard}
               onPress={() => router.push('/warehouses')}
@@ -103,6 +114,9 @@ export default function UserHomeScreen() {
                 <Text style={styles.cardText}>DEPOLAR</Text>
               </View>
             </TouchableOpacity>
+            
+            {/* Boş kart veya ileride eklenecek başka bir modül için yer tutucu */}
+            <View style={styles.gridCard}></View>
           </View>
         </View>
         
