@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  SafeAreaView, 
-  StatusBar, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
   TextInput,
   ScrollView,
   KeyboardAvoidingView,
@@ -14,9 +14,19 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons'; // Ionicons'u buraya ekleyin
+import {
+  updateEmail, // updateEmail'i burada kullanmıyoruz, verifyBeforeUpdateEmail kullanılıyor
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  AuthError,
+  sendEmailVerification, // Bunu da kullanmıyoruz
+  verifyBeforeUpdateEmail
+} from 'firebase/auth';
 import { useAuth } from '../context/AuthContext';
-import { updateEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, AuthError, sendEmailVerification } from 'firebase/auth';
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from '../firebase/config';
 
 // Kullanıcı verileri için tip tanımı
 interface UserData {
@@ -39,8 +49,7 @@ interface FormData {
 }
 
 export default function EditProfileScreen() {
-  const { userData, currentUser, updateUserData } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const { currentUser, userData, logout } = useAuth(); // logout fonksiyonunu alın
   const [formData, setFormData] = useState<FormData>({
     eposta: '',
     telefon: '',
@@ -48,7 +57,15 @@ export default function EditProfileScreen() {
     currentPassword: '',
     confirmPassword: '',
   });
+  const [loading, setLoading] = useState(false);
   const [showPasswordFields, setShowPasswordFields] = useState(false);
+  const [errors, setErrors] = useState({
+    eposta: '',
+    telefon: '',
+    password: '',
+    currentPassword: '',
+    confirmPassword: '',
+  });
 
   useEffect(() => {
     // Form verilerini userData'dan doldur
@@ -61,150 +78,211 @@ export default function EditProfileScreen() {
     }
   }, [userData]);
 
-  const handleChange = (field: keyof FormData, value: string) => {
+  const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData({
       ...formData,
       [field]: value
     });
   };
 
+  const togglePasswordFields = () => {
+    setShowPasswordFields(!showPasswordFields);
+  };
+
   const validateForm = () => {
+    let isValid = true;
+    const newErrors = {
+      eposta: '',
+      telefon: '',
+      password: '',
+      currentPassword: '',
+      confirmPassword: '',
+    };
+
     // E-posta doğrulama
     if (formData.eposta !== userData?.eposta) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.eposta)) {
-        Alert.alert("Hata", "Geçerli bir e-posta adresi giriniz.");
-        return false;
+        newErrors.eposta = "Geçerli bir e-posta adresi giriniz.";
+        isValid = false;
       }
     }
 
     // Şifre doğrulama
     if (showPasswordFields) {
       if (!formData.currentPassword) {
-        Alert.alert("Hata", "Mevcut şifrenizi girmelisiniz.");
-        return false;
+        newErrors.currentPassword = "Mevcut şifrenizi girmelisiniz.";
+        isValid = false;
       }
-      
+
       if (formData.password !== formData.confirmPassword) {
-        Alert.alert("Hata", "Yeni şifreler eşleşmiyor.");
-        return false;
+        newErrors.password = "Yeni şifreler eşleşmiyor.";
+        newErrors.confirmPassword = "Yeni şifreler eşleşmiyor.";
+        isValid = false;
       }
-      
+
       if (formData.password && formData.password.length < 6) {
-        Alert.alert("Hata", "Şifre en az 6 karakter olmalıdır.");
-        return false;
+        newErrors.password = "Şifre en az 6 karakter olmalıdır.";
+        isValid = false;
       }
     }
 
-    return true;
+    setErrors(newErrors);
+    return isValid;
   };
 
   const handleSave = async () => {
     if (!validateForm()) return;
-    
+
     setLoading(true);
+    // Değişkenleri try bloğunun dışına taşı
+    let needsReauthentication = false;
+    let emailChanged = false;
+    let passwordChanged = false;
+    const updatedData: Partial<UserData> = {}; // Bunu da dışarı alabiliriz
+
     try {
-      // Değişiklik yapılacak alanları kontrol et
-      const updatedData: Partial<UserData> = {};
-      let needsReauthentication = false;
-      
-      // E-posta değişikliği
+      // Değişiklikleri belirle
       if (formData.eposta !== userData?.eposta) {
         needsReauthentication = true;
+        emailChanged = true;
       }
-      
-      // Şifre değişikliği
       if (showPasswordFields && formData.password) {
         needsReauthentication = true;
+        passwordChanged = true;
       }
-      
-      // Telefon değişikliği
       if (formData.telefon !== userData?.telefon) {
         updatedData.telefon = formData.telefon;
       }
-      
-      // Yeniden kimlik doğrulama gerektiren işlemler için
+
+      // Yeniden kimlik doğrulama gerekiyorsa
       if (needsReauthentication) {
         if (!formData.currentPassword) {
           Alert.alert("Hata", "E-posta veya şifre değişikliği için mevcut şifrenizi girmelisiniz.");
           setLoading(false);
           return;
         }
-        
+
         try {
           // Kullanıcının yeniden kimlik doğrulaması
           if (!currentUser?.email) {
             throw new Error("Kullanıcı e-posta bilgisi bulunamadı");
           }
-
           const credential = EmailAuthProvider.credential(
             currentUser.email,
             formData.currentPassword
           );
-          
           await reauthenticateWithCredential(currentUser, credential);
-          
-          // E-posta güncelleme
-          if (formData.eposta !== userData?.eposta) {
-            // E-posta doğrulama bağlantısı gönder
-            await currentUser.verifyBeforeUpdateEmail(formData.eposta);
-            
-            // Kullanıcıya bilgi ver
+
+          // E-posta güncelleme (Doğrulama gönder)
+          if (emailChanged) {
+            await verifyBeforeUpdateEmail(currentUser, formData.eposta);
             Alert.alert(
               "Doğrulama Gerekli",
-              "Yeni e-posta adresinize bir doğrulama bağlantısı gönderdik. Lütfen e-postanızı kontrol edin ve bağlantıya tıklayarak değişikliği onaylayın.",
-              [{ text: "Tamam", onPress: () => router.push('/profile') }]
+              "Yeni e-posta adresinize bir doğrulama bağlantısı gönderdik. Değişikliğin tamamlanması için çıkış yapacaksınız. Lütfen e-postanızı kontrol edip doğruladıktan sonra tekrar giriş yapın.",
+              [{
+                text: "Tamam",
+                onPress: async () => {
+                  try {
+                    await logout(); // Çıkış yap
+                    router.replace('/'); // Login ekranına yönlendir
+                  } catch (logoutError) {
+                    console.error("Otomatik çıkış hatası:", logoutError);
+                    Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
+                    setLoading(false); // Yükleniyor durumunu kapat
+                  }
+                }
+              }]
             );
-            
-            // Not: Firestore güncellemesi otomatik olarak gerçekleşecek veya
-            // kullanıcının bir sonraki girişinde yapılacak
-            return; // İşlemi sonlandır çünkü e-posta değişikliği doğrulama bekliyor
+            // E-posta değişikliği sonrası başka işlem yapmadan çıkış yapılacağı için return
+            return;
           }
-          
+
           // Şifre güncelleme
-          if (showPasswordFields && formData.password) {
+          if (passwordChanged) {
             await updatePassword(currentUser, formData.password);
+            // Firestore'daki diğer alanları (telefon vb.) güncelle
+            if (Object.keys(updatedData).length > 0) {
+              const userDocRef = doc(db, "Kullanicilar", currentUser.uid);
+              await updateDoc(userDocRef, updatedData);
+              console.log("Firestore'daki diğer alanlar güncellendi (şifre sonrası).");
+            }
+            Alert.alert(
+              "Başarılı",
+              "Şifreniz başarıyla güncellendi. Değişikliğin tamamlanması için çıkış yapacaksınız. Lütfen yeni şifrenizle tekrar giriş yapın.",
+              [{
+                text: "Tamam",
+                onPress: async () => {
+                  try {
+                    await logout(); // Çıkış yap
+                    router.replace('/'); // Login ekranına yönlendir
+                  } catch (logoutError) {
+                    console.error("Otomatik çıkış hatası:", logoutError);
+                    Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
+                    setLoading(false); // Yükleniyor durumunu kapat
+                  }
+                }
+              }]
+            );
+            // Şifre değişikliği sonrası başka işlem yapmadan çıkış yapılacağı için return
+            return;
           }
-          
+
         } catch (error) {
+          // ... (Re-authentication veya güncelleme hata yönetimi) ...
           const authError = error as AuthError;
-          console.error("Kimlik doğrulama veya güncelleme hatası:", authError);
+          let errorMessage = "Kimlik doğrulama veya güncelleme sırasında bir hata oluştu.";
           if (authError.code === 'auth/wrong-password') {
-            Alert.alert("Hata", "Mevcut şifreniz yanlış.");
-          } else {
-            Alert.alert("Hata", "İşlem yapılırken bir sorun oluştu. Daha sonra tekrar deneyin.");
+            errorMessage = "Mevcut şifreniz yanlış.";
+          } else if (authError.code === 'auth/too-many-requests') {
+            errorMessage = "Çok fazla deneme yapıldı. Lütfen daha sonra tekrar deneyin.";
+          } else if (authError.code === 'auth/email-already-in-use') {
+             errorMessage = "Bu e-posta adresi zaten başka bir hesap tarafından kullanılıyor.";
           }
+          console.error("Kimlik doğrulama veya güncelleme hatası:", authError);
+          Alert.alert("Hata", errorMessage);
           setLoading(false);
-          return;
+          return; // Hata durumunda işlemi durdur
         }
       }
-      
-      // Firestore'da veri güncelleme (en az bir alan değiştiyse)
-      if (Object.keys(updatedData).length > 0) {
-        const success = await updateUserData(updatedData);
-        if (!success) {
-          Alert.alert("Hata", "Bilgileriniz güncellenemedi. Daha sonra tekrar deneyin.");
-          setLoading(false);
-          return;
-        }
+
+      // Sadece Firestore'daki diğer alanlar güncelleniyorsa (telefon gibi)
+      if (Object.keys(updatedData).length > 0 && !needsReauthentication) {
+        const userDocRef = doc(db, "Kullanicilar", currentUser.uid);
+        await updateDoc(userDocRef, updatedData);
+        Alert.alert("Başarılı", "Bilgileriniz güncellendi.");
+        router.push('/profile'); // Profile geri dön
+      } else if (!needsReauthentication && Object.keys(updatedData).length === 0 && !emailChanged && !passwordChanged) { // Koşulu biraz daha netleştirelim
+        // Hiçbir değişiklik yapılmadıysa (ve e-posta/şifre de değişmediyse)
+        Alert.alert("Bilgi", "Herhangi bir değişiklik yapılmadı.");
       }
-      
-      Alert.alert("Başarılı", "Bilgileriniz başarıyla güncellendi.", [
-        { text: "Tamam", onPress: () => router.push('/profile') }
-      ]);
-      
+
     } catch (error) {
-      console.error("Profil güncelleme hatası:", error);
-      Alert.alert("Hata", "İşlem yapılırken bir sorun oluştu. Daha sonra tekrar deneyin.");
-    } finally {
+      console.error("Profil kaydetme hatası:", error);
+      Alert.alert("Hata", "İşlem yapılırken bir sorun oluştu.");
+      // Hata durumunda da loading'i kapatmak iyi olur
       setLoading(false);
+    } finally {
+      // Artık 'needsReauthentication' burada erişilebilir
+      // Eğer otomatik çıkış yapılmadıysa (yani needsReauthentication false ise veya
+      // reauth/update içinde bir hata oluşmadıysa ve sadece telefon güncellendiyse)
+      // loading durumunu kapat.
+      // Not: Otomatik çıkış durumlarında loading zaten Alert'in onPress'inde yönetiliyor.
+      // Hata durumunda catch bloğunda yönetiliyor. Bu kontrol sadece başarılı telefon güncellemesi için.
+      if (!needsReauthentication && Object.keys(updatedData).length > 0) {
+         setLoading(false);
+      } else if (!needsReauthentication && Object.keys(updatedData).length === 0 && !emailChanged && !passwordChanged) {
+         // Hiçbir değişiklik yapılmadıysa da kapat
+         setLoading(false);
+      }
+      // Diğer durumlarda (reauth gerektirenler veya catch'e düşenler) setLoading zaten yönetiliyor.
     }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidView}
       >
@@ -224,7 +302,7 @@ export default function EditProfileScreen() {
           </View>
 
           {/* Form Content */}
-          <ScrollView 
+          <ScrollView
             style={styles.formContainer}
             contentContainerStyle={styles.formContent}
             showsVerticalScrollIndicator={false}
@@ -279,12 +357,13 @@ export default function EditProfileScreen() {
               <TextInput
                 style={styles.input}
                 value={formData.eposta}
-                onChangeText={(text) => handleChange('eposta', text)}
+                onChangeText={(text) => handleInputChange('eposta', text)}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 placeholder="E-posta adresiniz"
                 placeholderTextColor="#AAAAAA"
               />
+              {errors.eposta ? <Text style={styles.errorText}>{errors.eposta}</Text> : null}
             </View>
 
             {/* Telefon */}
@@ -293,25 +372,26 @@ export default function EditProfileScreen() {
               <TextInput
                 style={styles.input}
                 value={formData.telefon}
-                onChangeText={(text) => handleChange('telefon', text)}
+                onChangeText={(text) => handleInputChange('telefon', text)}
                 keyboardType="phone-pad"
                 placeholder="Telefon numaranız"
                 placeholderTextColor="#AAAAAA"
               />
+              {errors.telefon ? <Text style={styles.errorText}>{errors.telefon}</Text> : null}
             </View>
 
             {/* Şifre Değiştirme */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.passwordToggle}
-              onPress={() => setShowPasswordFields(!showPasswordFields)}
+              onPress={togglePasswordFields}
             >
               <Text style={styles.passwordToggleText}>
                 {showPasswordFields ? "Şifre değişikliğini iptal et" : "Şifremi değiştirmek istiyorum"}
               </Text>
-              <Ionicons 
-                name={showPasswordFields ? "chevron-up" : "chevron-down"} 
-                size={20} 
-                color="#E6A05F" 
+              <Ionicons
+                name={showPasswordFields ? "chevron-up" : "chevron-down"}
+                size={20}
+                color="#E6A05F"
               />
             </TouchableOpacity>
 
@@ -323,11 +403,12 @@ export default function EditProfileScreen() {
                   <TextInput
                     style={styles.input}
                     value={formData.currentPassword}
-                    onChangeText={(text) => handleChange('currentPassword', text)}
+                    onChangeText={(text) => handleInputChange('currentPassword', text)}
                     secureTextEntry
                     placeholder="Mevcut şifrenizi girin"
                     placeholderTextColor="#AAAAAA"
                   />
+                  {errors.currentPassword ? <Text style={styles.errorText}>{errors.currentPassword}</Text> : null}
                 </View>
 
                 {/* Yeni Şifre */}
@@ -336,11 +417,12 @@ export default function EditProfileScreen() {
                   <TextInput
                     style={styles.input}
                     value={formData.password}
-                    onChangeText={(text) => handleChange('password', text)}
+                    onChangeText={(text) => handleInputChange('password', text)}
                     secureTextEntry
                     placeholder="Yeni şifrenizi girin"
                     placeholderTextColor="#AAAAAA"
                   />
+                  {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
                 </View>
 
                 {/* Şifre Tekrar */}
@@ -349,11 +431,12 @@ export default function EditProfileScreen() {
                   <TextInput
                     style={styles.input}
                     value={formData.confirmPassword}
-                    onChangeText={(text) => handleChange('confirmPassword', text)}
+                    onChangeText={(text) => handleInputChange('confirmPassword', text)}
                     secureTextEntry
                     placeholder="Yeni şifrenizi tekrar girin"
                     placeholderTextColor="#AAAAAA"
                   />
+                  {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
                 </View>
               </>
             )}
@@ -385,15 +468,15 @@ export default function EditProfileScreen() {
           <TouchableOpacity style={styles.tabItem}>
             <Ionicons name="grid-outline" size={24} color="#666666" />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.tabItem}
             onPress={() => router.push('/home')}
           >
             <Ionicons name="home-outline" size={24} color="#666666" />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.tabItem}
             onPress={() => router.push('/profile')}
           >
@@ -566,5 +649,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 12,
+    marginTop: 4,
   },
 });

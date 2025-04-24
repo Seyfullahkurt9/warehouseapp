@@ -64,6 +64,7 @@ export default function AddCustomerScreen() {
     return true;
   };
 
+  // Başarı alert'i yerine yeni oluşturduğumuz sayfaya yönlendir
   const handleAddCustomer = async () => {
     if (!validateForm()) return;
     
@@ -104,15 +105,11 @@ export default function AddCustomerScreen() {
           kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı'
         });
         
-        // Başarı sayfasına yönlendir
-        Alert.alert("Başarılı", "Müşteri başarıyla eklendi", [
-          { 
-            text: "Tamam", 
-            onPress: () => router.push('/customers')
-          }
-        ]);
+        // Alert yerine success sayfasına yönlendir
+        router.push('/customer-success');
         
       } catch (firestoreError) {
+        // Hata işlemleri aynen kalıyor
         const fbError = firestoreError as Error;
         
         if (fbError.message && fbError.message.includes("permission")) {

@@ -8,11 +8,14 @@ import {
   StatusBar, 
   FlatList,
   ActivityIndicator,
-  Alert
+  Alert,
+  Modal,
+  ScrollView,
+  Linking
 } from 'react-native';
 import { router } from 'expo-router';
-import { Ionicons, Feather } from '@expo/vector-icons';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { collection, query, where, getDocs, doc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 
@@ -24,6 +27,8 @@ interface Supplier {
   telefon: string;
   eposta: string;
   firma_id: string;
+  eklenme_tarihi?: any;
+  ekleyen_kullanici?: string;
 }
 
 export default function SuppliersScreen() {
@@ -31,9 +36,15 @@ export default function SuppliersScreen() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Profil sayfasından çağrıldı mı kontrolü
   const [isRetry, setIsRetry] = useState(false);
+  
+  // Detay modalı için state değişkenleri
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  
+  // Silme işlemleri için state değişkenleri
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deletingSupplier, setDeletingSupplier] = useState(false);
 
   useEffect(() => {
     const fetchSuppliers = async () => {
@@ -98,6 +109,78 @@ export default function SuppliersScreen() {
     }
 
     router.push('/add-supplier');
+  };
+  
+  // Tedarikçi detaylarını gösterme fonksiyonu
+  const showSupplierDetails = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setDetailModalVisible(true);
+  };
+
+  // Telefon numarasını arama fonksiyonu
+  const handleCall = (phoneNumber: string) => {
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
+
+  // E-posta gönderme fonksiyonu
+  const handleEmail = (email: string) => {
+    Linking.openURL(`mailto:${email}`);
+  };
+
+  // Tarih formatlama fonksiyonu
+  const formatDate = (dateObject: any): string => {
+    if (!dateObject) return '-';
+    
+    try {
+      const date = dateObject.toDate ? dateObject.toDate() : new Date(dateObject);
+      return date.toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch (error) {
+      return '-';
+    }
+  };
+  
+  // Tedarikçi silme fonksiyonu
+  const handleDeleteSupplier = async () => {
+    if (!selectedSupplier) return;
+    
+    setDeletingSupplier(true);
+    
+    try {
+      // Firestore'dan tedarikçiyi sil
+      const supplierRef = doc(db, "Tedarikciler", selectedSupplier.id);
+      await deleteDoc(supplierRef);
+      
+      // Eylemler tablosuna silme kaydı ekle
+      const eylemlerRef = collection(db, "Eylemler");
+      await addDoc(eylemlerRef, {
+        eylem_tarihi: new Date(),
+        eylem_aciklamasi: `"${selectedSupplier.sirket_ismi}" isimli tedarikçi silindi.`,
+        kullanici_id: currentUser?.uid || '',
+        kullanici_adi: userData?.isim + ' ' + userData?.soyisim || 'Bilinmeyen Kullanıcı',
+        firma_id: userData?.firma_id || '',
+        islem_turu: 'tedarikci_silme',
+        ilgili_belge_id: selectedSupplier.id
+      });
+      
+      // Listeden tedarikçiyi kaldır
+      setSuppliers(suppliers.filter(supplier => supplier.id !== selectedSupplier.id));
+      
+      // Modalları kapat
+      setDeleteConfirmVisible(false);
+      setDetailModalVisible(false);
+      
+      Alert.alert("Başarılı", `"${selectedSupplier.sirket_ismi}" tedarikçisi başarıyla silindi.`);
+      
+    } catch (error) {
+      console.error("Tedarikçi silinirken hata:", error);
+      Alert.alert("Hata", "Tedarikçi silinirken bir sorun oluştu.");
+    }
+    
+    setDeletingSupplier(false);
   };
 
   if (loading) {
@@ -172,10 +255,7 @@ export default function SuppliersScreen() {
                 </View>
                 <TouchableOpacity 
                   style={styles.detailsButton}
-                  onPress={() => Alert.alert(
-                    item.sirket_ismi,
-                    `E-posta: ${item.eposta}\nTelefon: ${item.telefon}\nAdres: ${item.adres}`
-                  )}
+                  onPress={() => showSupplierDetails(item)}
                 >
                   <View style={styles.detailsIconContainer}>
                     <Feather name="eye" size={18} color="#666666" />
@@ -189,6 +269,164 @@ export default function SuppliersScreen() {
             ]}
           />
         )}
+
+        {/* Tedarikçi Detayları Modal */}
+        <Modal
+          visible={detailModalVisible}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setDetailModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              {/* Modal Header */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Tedarikçi Detayları</Text>
+                <TouchableOpacity 
+                  style={styles.closeButton}
+                  onPress={() => setDetailModalVisible(false)}
+                >
+                  <Ionicons name="close" size={24} color="#222222" />
+                </TouchableOpacity>
+              </View>
+              
+              {/* Modal Body */}
+              {selectedSupplier ? (
+                <ScrollView style={styles.modalBody}>
+                  {/* Tedarikçi Özeti */}
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Firma Bilgileri</Text>
+                    
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Firma Adı:</Text>
+                      <Text style={styles.detailValue}>{selectedSupplier.sirket_ismi}</Text>
+                    </View>
+                    
+                    <View style={styles.addressContainer}>
+                      <Text style={styles.detailLabel}>Adres:</Text>
+                      <Text style={styles.addressValue}>{selectedSupplier.adres || 'Belirtilmemiş'}</Text>
+                    </View>
+                  </View>
+
+                  {/* İletişim Bilgileri */}
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>İletişim Bilgileri</Text>
+                    
+                    <View style={styles.contactDetailRow}>
+                      <View style={styles.contactDetailText}>
+                        <Text style={styles.detailLabel}>Telefon:</Text>
+                        <Text style={styles.detailValue}>{selectedSupplier.telefon || 'Belirtilmemiş'}</Text>
+                      </View>
+                      {selectedSupplier.telefon && (
+                        <TouchableOpacity 
+                          style={styles.actionButton}
+                          onPress={() => handleCall(selectedSupplier.telefon)}
+                        >
+                          <Feather name="phone" size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    
+                    <View style={styles.contactDetailRow}>
+                      <View style={styles.contactDetailText}>
+                        <Text style={styles.detailLabel}>E-posta:</Text>
+                        <Text style={styles.detailValue}>{selectedSupplier.eposta || 'Belirtilmemiş'}</Text>
+                      </View>
+                      {selectedSupplier.eposta && (
+                        <TouchableOpacity 
+                          style={[styles.actionButton, { backgroundColor: '#4CAF50' }]}
+                          onPress={() => handleEmail(selectedSupplier.eposta)}
+                        >
+                          <Feather name="mail" size={20} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Kayıt Bilgileri */}
+                  {(selectedSupplier.eklenme_tarihi || selectedSupplier.ekleyen_kullanici) && (
+                    <View style={styles.detailSection}>
+                      <Text style={styles.detailSectionTitle}>Kayıt Bilgileri</Text>
+                      
+                      {selectedSupplier.eklenme_tarihi && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Eklenme Tarihi:</Text>
+                          <Text style={styles.detailValue}>{formatDate(selectedSupplier.eklenme_tarihi)}</Text>
+                        </View>
+                      )}
+                      
+                      {selectedSupplier.ekleyen_kullanici && (
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Ekleyen:</Text>
+                          <Text style={styles.detailValue}>{selectedSupplier.ekleyen_kullanici}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  
+                  {/* Silme Butonu - Sadece admin için göster */}
+                  {userData?.yetki_id === "admin" && (
+                    <TouchableOpacity 
+                      style={styles.deleteButton}
+                      onPress={() => setDeleteConfirmVisible(true)}
+                    >
+                      <Text style={styles.deleteButtonText}>Tedarikçiyi Sil</Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              ) : (
+                <View style={styles.detailsLoading}>
+                  <ActivityIndicator size="large" color="#E6A05F" />
+                  <Text style={styles.loadingText}>Yükleniyor...</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Silme Onay Modalı */}
+        <Modal
+          visible={deleteConfirmVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setDeleteConfirmVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.confirmModalContent}>
+              <View style={styles.confirmModalHeader}>
+                <Text style={styles.confirmModalTitle}>Tedarikçiyi Sil</Text>
+              </View>
+              
+              <View style={styles.confirmModalBody}>
+                <Text style={styles.confirmText}>
+                  "{selectedSupplier?.sirket_ismi}" tedarikçisini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.
+                </Text>
+                
+                <View style={styles.confirmButtons}>
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={() => setDeleteConfirmVisible(false)}
+                    disabled={deletingSupplier}
+                  >
+                    <Text style={styles.cancelButtonText}>İptal</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.confirmDeleteButton}
+                    onPress={handleDeleteSupplier}
+                    disabled={deletingSupplier}
+                  >
+                    {deletingSupplier ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.confirmDeleteButtonText}>Sil</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {/* Floating Action Button */}
         <TouchableOpacity 
@@ -432,5 +670,175 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  
+  // Modal ve detay için yeni stiller
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222222',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalBody: {
+    padding: 16,
+    maxHeight: '80%',
+  },
+  detailsLoading: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailSection: {
+    marginBottom: 24,
+    backgroundColor: '#F8F8F8',
+    padding: 16,
+    borderRadius: 8,
+  },
+  detailSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222222',
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666666',
+    width: 100,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#222222',
+    flex: 1,
+  },
+  addressContainer: {
+    marginTop: 8,
+  },
+  addressValue: {
+    fontSize: 14,
+    color: '#222222',
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+  contactDetailRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  contactDetailText: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionButton: {
+    backgroundColor: '#52B4F0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  deleteButton: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 30,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmModalContent: {
+    width: '90%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    maxWidth: 400,
+  },
+  confirmModalHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+    alignItems: 'center',
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222222',
+  },
+  confirmModalBody: {
+    padding: 20,
+  },
+  confirmText: {
+    fontSize: 16,
+    color: '#333333',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#EEEEEE',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  cancelButtonText: {
+    color: '#666666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  confirmDeleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

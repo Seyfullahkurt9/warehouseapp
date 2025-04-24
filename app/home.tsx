@@ -82,15 +82,25 @@ export default function UserHomeScreen() {
             </TouchableOpacity>
           </View>
           
-          {/* Yeni Müşteriler Satırı */}
+          {/* Müşteriler ve Depolar Satırı - değiştirildi */}
           <View style={styles.gridRow}>
             <TouchableOpacity 
-              style={[styles.gridCard, styles.fullWidthCard]}
+              style={styles.gridCard}
               onPress={() => router.push('/customers')}
             >
               <View style={styles.cardContent}>
                 <Feather name="user-check" size={40} color="#666666" />
                 <Text style={styles.cardText}>MÜŞTERİLER</Text>
+              </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.gridCard}
+              onPress={() => router.push('/warehouses')}
+            >
+              <View style={styles.cardContent}>
+                <Feather name="home" size={40} color="#666666" />
+                <Text style={styles.cardText}>DEPOLAR</Text>
               </View>
             </TouchableOpacity>
           </View>

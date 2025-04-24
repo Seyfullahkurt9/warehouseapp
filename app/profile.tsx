@@ -83,11 +83,13 @@ export default function ProfileScreen() {
         </View>
         
         <View style={styles.subHeader}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          {/* Geri Butonu - Mutlak Konumlandırılmış */}
+          <TouchableOpacity style={styles.backButtonAbsolute} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#222222" />
           </TouchableOpacity>
+          {/* Ortalanmış Başlık */}
           <Text style={styles.screenTitle}>Bilgilerim</Text>
-          <View style={{ width: 24 }} /> {/* Empty view for centering */}
+          {/* Sağ tarafta boşluk bırakmaya gerek yok */}
         </View>
 
         {/* Profile Card */}
@@ -221,18 +223,25 @@ const styles = StyleSheet.create({
   subHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    justifyContent: 'center', // Ortala
+    paddingHorizontal: 16, // Kenar boşlukları
     paddingVertical: 5,
     marginBottom: 10,
+    position: 'relative', // Mutlak konumlandırma için gerekli
+    height: 40, // Veya buton yüksekliğine uygun bir değer
   },
-  backButton: {
+  backButtonAbsolute: {
+    position: 'absolute', // Mutlak konumlandırma
+    left: 16, // Sol kenar boşluğu
+    top: 5, // Dikey hizalama için (subHeader paddingVertical ile aynı)
     padding: 5,
+    zIndex: 1, // Başlığın üzerinde kalması için
   },
   screenTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#222222',
+    // marginLeft veya marginRight gerekmez
   },
   cardContainer: {
     flex: 1,

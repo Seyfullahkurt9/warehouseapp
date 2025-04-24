@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { onAuthChange, auth, logout } from '../firebase/auth'; // auth'u burada import edin
-import { collection, query, where, getDocs, setDoc, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, setDoc, doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from '../firebase/config';
 import { onIdTokenChanged } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -58,60 +58,81 @@ export function AuthProvider({ children }) {
     return () => unsubscribeToken();
   }, []);
 
-  // Kullanıcı verilerini yükleme
+  // Kullanıcı verilerini yükleme (onAuthChange tarafından çağrılır)
   const fetchAndUpdateUserData = async (user) => {
     try {
-      console.log("Güncel kullanıcı:", {
+      console.log("Güncel kullanıcı (Auth State):", { // Log mesajını netleştirelim
         uid: user?.uid,
         email: user?.email
       });
-      
-      if (!user || !user.email) {
-        console.log("Kullanıcı bilgisi eksik, veri alınamıyor");
-        return;
+
+      if (!user || !user.uid) { // UID kontrolü daha güvenli
+        console.log("Kullanıcı UID bilgisi eksik, veri alınamıyor");
+        setUserData(null); // Veri alınamıyorsa userData'yı temizle
+        setIsAdmin(false);
+        return; // return false yerine sadece return
       }
-      
-      // İlk önce UID ile dene - bu daha güvenilir bir yöntem
+
+      // Firestore'dan UID ile veri çek
       const userDocRef = doc(db, "Kullanicilar", user.uid);
       const userDocSnap = await getDoc(userDocRef);
-      
+
       if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
-        console.log("Kullanıcı UID ile bulundu", userData);
-        
+        const userDataFromFirestore = userDocSnap.data(); // Yeni değişken ismi
+        console.log("Kullanıcı UID ile bulundu (Auth State)", userDataFromFirestore);
+
         // Context'i güncelle
-        setUserData(userData);
-        setIsAdmin(userData.yetki_id === "admin");
-        
+        setUserData(userDataFromFirestore);
+        setIsAdmin(userDataFromFirestore.yetki_id === "admin");
+
+        // --- BURAYA TAŞINAN GÜNCELLEME KONTROLÜ ---
+        try {
+          // Kullanıcı durumunu Firebase'den yeniden yükle
+          await user.reload();
+          const refreshedUser = auth.currentUser;
+
+          // Kontrol edilecek değerleri logla
+          console.log("E-posta güncelleme kontrolü (Auth State):", {
+            authEmail: refreshedUser?.email,
+            firestoreEmail: userDataFromFirestore?.eposta, // Doğru userData değişkenini kullan
+            isVerified: refreshedUser?.emailVerified
+          });
+
+          // Firestore'u güncelleme kontrolü
+          if (refreshedUser && userDataFromFirestore && refreshedUser.email !== userDataFromFirestore.eposta && refreshedUser.emailVerified) {
+            console.log(`Auth e-postası (${refreshedUser.email}) Firestore e-posta alanından (${userDataFromFirestore.eposta}) farklı ve DOĞRULANMIŞ. Firestore güncelleniyor (Auth State)...`);
+            try {
+              // userDocRef zaten yukarıda tanımlı, tekrar kullanabiliriz
+              await updateDoc(userDocRef, {
+                eposta: refreshedUser.email
+              });
+              // Context'teki userData'yı da hemen güncelle
+              setUserData(prevData => ({ ...prevData, eposta: refreshedUser.email }));
+              console.log("Firestore e-posta alanı güncellendi (Auth State).");
+            } catch (updateError) {
+              console.error("Firestore e-posta güncellenirken hata (Auth State):", updateError);
+            }
+          }
+        } catch (reloadError) {
+          console.error("Kullanıcı durumu yeniden yüklenirken hata (Auth State):", reloadError);
+        }
+        // --- KONTROL SONU ---
+
         // Önbellekte sakla
-        await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        return;
-      }
-      
-      // UID ile bulunamadıysa, e-posta ile dene
-      console.log("UID ile kullanıcı bulunamadı, e-posta ile deneniyor");
-      const usersRef = collection(db, "Kullanicilar");
-      const q = query(usersRef, where("eposta", "==", user.email));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data();
-        console.log("Kullanıcı e-posta ile bulundu");
-        
-        // Context'i güncelle
-        setUserData(userData);
-        setIsAdmin(userData.yetki_id === "admin");
-        
-        // Önbellekte sakla
-        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        await AsyncStorage.setItem('userData', JSON.stringify(userDataFromFirestore));
+
       } else {
-        console.log("Kullanıcı hiçbir şekilde bulunamadı");
+        console.log("Kullanıcı UID ile Firestore'da bulunamadı (Auth State)");
+        setUserData(null); // Kullanıcı Firestore'da yoksa temizle
+        setIsAdmin(false);
+        // İsteğe bağlı: E-posta ile tekrar deneme burada da yapılabilir ama UID olmalı.
       }
     } catch (error) {
-      console.error("Kullanıcı verisi alınırken hata oluştu:", error);
+      console.error("Kullanıcı verisi alınırken hata oluştu (Auth State):", error);
+      setUserData(null); // Hata durumunda temizle
+      setIsAdmin(false);
     }
-  };
+  }; // fetchAndUpdateUserData fonksiyonunun sonu
 
   // Yeni fonksiyon - Profilden erişilebilen veri yenileme fonksiyonu
   const fetchUserData = async (user) => {
@@ -159,11 +180,47 @@ export function AuthProvider({ children }) {
       console.log("Kullanıcı verisi yenilendi:", userData);
       setUserData(userData);
       setIsAdmin(userData.yetki_id === "admin");
-      
+
+      // --- GÜNCELLEME KONTROLÜ ÖNCESİ ---
+      try {
+        // Kullanıcı durumunu Firebase'den yeniden yükle (emailVerified'ı güncellemek için)
+        await user.reload();
+        // Yeniden yüklenen kullanıcı nesnesini kullanmak daha güvenli olabilir
+        const refreshedUser = auth.currentUser; // auth objesini import ettiğinizden emin olun
+
+        // Kontrol edilecek değerleri logla
+        console.log("E-posta güncelleme kontrolü:", {
+          authEmail: refreshedUser?.email,
+          firestoreEmail: userData?.eposta, // userData burada tanımlı mı? Dikkat!
+          isVerified: refreshedUser?.emailVerified
+        });
+
+        // Auth e-postası ile Firestore e-postası farklıysa ve Auth e-postası doğrulanmışsa,
+        // Firestore'u güncelle.
+        // userData'nın bu kapsamda doğru olduğundan emin olunmalı.
+        if (refreshedUser && userData && refreshedUser.email !== userData.eposta && refreshedUser.emailVerified) {
+          console.log(`Auth e-postası (${refreshedUser.email}) Firestore e-posta alanından (${userData.eposta}) farklı ve DOĞRULANMIŞ. Firestore güncelleniyor...`);
+          try {
+            const userDocRef = doc(db, "Kullanicilar", refreshedUser.uid);
+            await updateDoc(userDocRef, {
+              eposta: refreshedUser.email // Firestore'u yeni e-posta ile güncelle
+            });
+            // Context'teki userData'yı da hemen güncelle
+            setUserData(prevData => ({ ...prevData, eposta: refreshedUser.email }));
+            console.log("Firestore e-posta alanı güncellendi.");
+          } catch (updateError) {
+            console.error("Firestore e-posta güncellenirken hata:", updateError);
+          }
+        }
+      } catch (reloadError) {
+        console.error("Kullanıcı durumu yeniden yüklenirken hata:", reloadError);
+      }
+      // --- KONTROL SONU ---
+
       // Önbellekte sakla
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      
-      return true;
+
+      return true; // Fonksiyonun geri kalanı
     } catch (error) {
       console.error("Kullanıcı verisi yenilenirken hata oluştu:", error);
       return false;
