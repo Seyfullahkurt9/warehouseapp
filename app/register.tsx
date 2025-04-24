@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 // Import our custom modules
 import { registerUser } from '../firebase/auth';
 import { createUserDocument, logUserAction } from '../firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore'; // Firestore fonksiyonlarını import et
+import { db } from '../firebase/config'; // Firestore bağlantısını import et
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState('');
@@ -52,6 +54,22 @@ export default function RegisterScreen() {
       
       // Log the action using our helper function
       await logUserAction(user.uid, "Kullanıcı kaydı");
+      
+      // Giris_Kayitlari tablosuna kayıt oluştur
+      try {
+        const girisKayitlariRef = collection(db, "Giris_Kayitlari");
+        await addDoc(girisKayitlariRef, {
+          eylem_tarihi: new Date(),
+          eylem_turu: "kayıt",
+          durumu: "başarılı",
+          kullanici_id: user.uid,
+          firma_id: "ornek_firma" // Yeni kullanıcı için varsayılan firma_id
+        });
+        console.log("Kayıt işlemi Giris_Kayitlari tablosuna eklendi");
+      } catch (logError) {
+        console.error("Kayıt işlemi Giris_Kayitlari tablosuna eklenirken hata:", logError);
+        // Bu hata ana işlemi etkilemesin, sadece loglayalım
+      }
 
       // Redirect to verification page
       router.push('/verification');

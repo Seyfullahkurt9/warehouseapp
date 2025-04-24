@@ -16,23 +16,23 @@ export default function MenuScreen() {
   const menuItems = [
     {
       id: '1',
-      title: 'Genel Stok Hareket Föyü',
-      route: '/stock-movement-general',
-    },
-    {
-      id: '2',
-      title: 'Cari Stok Hareket Föyü',
-      route: '/stock-movement-current',
-    },
-    {
-      id: '3',
-      title: 'Stok Geçmişi Takibi',
+      title: 'Stok Hareket Geçmişi',
       route: '/stock-history',
     },
     {
-      id: '4',
+      id: '2',
       title: 'Depolar Arası Stok Aktarımı',
       route: '/stock-transfer',
+    },
+    {
+      id: '3',
+      title: 'Son Giriş Bilgilerim',
+      route: '/login-history',
+    },
+    {
+      id: '4',
+      title: 'Hareketlerim',
+      route: '/my-actions',
     },
   ];
 

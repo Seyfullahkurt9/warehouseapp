@@ -127,7 +127,6 @@ export default function RootLayout() {
             <Stack.Screen name="stock-movement-current" />
             <Stack.Screen name="users" />
             <Stack.Screen name="add-user" />
-            <Stack.Screen name="user-success" />
             <Stack.Screen name="login-history" />
           </Stack>
           <StatusBar style="auto" />

@@ -15,19 +15,10 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, setDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { Picker } from '@react-native-picker/picker';
-
-// Müşteri tipi tanımı
-interface Customer {
-  id: string;
-  sirket_ismi: string;
-  adres?: string;
-  telefon?: string;
-  eposta?: string;
-}
 
 // Depo tipi tanımı
 interface Warehouse {
@@ -45,7 +36,7 @@ interface Stock {
   depo_id: string;
 }
 
-export default function AddProductExitScreen() {
+export default function AddStockTransferScreen() {
   const { userData, currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -53,24 +44,23 @@ export default function AddProductExitScreen() {
   const [error, setError] = useState<string | null>(null);
   
   // Form verileri
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
+  const [sourceWarehouse, setSourceWarehouse] = useState<string>('');
+  const [destinationWarehouse, setDestinationWarehouse] = useState<string>('');
   const [selectedStock, setSelectedStock] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   
   // Veriler
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [stocks, setStocks] = useState<Stock[]>([]);
-  const [filteredStocks, setFilteredStocks] = useState<Stock[]>([]);
+  const [availableStocks, setAvailableStocks] = useState<Stock[]>([]);
   
   // Seçili öğelerin tam verileri
   const [selectedStockData, setSelectedStockData] = useState<Stock | null>(null);
-  const [selectedCustomerData, setSelectedCustomerData] = useState<Customer | null>(null);
-  const [selectedWarehouseData, setSelectedWarehouseData] = useState<Warehouse | null>(null);
+  const [sourceWarehouseData, setSourceWarehouseData] = useState<Warehouse | null>(null);
+  const [destinationWarehouseData, setDestinationWarehouseData] = useState<Warehouse | null>(null);
 
-  // Müşterileri, depoları ve stokları yükle
+  // Depoları ve stokları yükle
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -79,23 +69,6 @@ export default function AddProductExitScreen() {
           setInitialLoading(false);
           return;
         }
-        
-        // Müşterileri yükle
-        const customersRef = collection(db, "Musteriler");
-        const customersQuery = query(customersRef, where("firma_id", "==", userData.firma_id));
-        const customersSnapshot = await getDocs(customersQuery);
-        
-        const customersData: Customer[] = [];
-        customersSnapshot.forEach((doc) => {
-          customersData.push({
-            id: doc.id,
-            sirket_ismi: doc.data().sirket_ismi,
-            adres: doc.data().adres,
-            telefon: doc.data().telefon,
-            eposta: doc.data().eposta
-          });
-        });
-        setCustomers(customersData);
         
         // Aktif depoları yükle
         const warehousesRef = collection(db, "Depolar");
@@ -144,57 +117,71 @@ export default function AddProductExitScreen() {
     fetchInitialData();
   }, [userData?.firma_id]);
   
-  // Depo seçildiğinde stokları filtrele
+  // Kaynak depo seçildiğinde stokları filtrele
   useEffect(() => {
-    if (selectedWarehouse) {
-      const filtered = stocks.filter(stock => stock.depo_id === selectedWarehouse);
-      setFilteredStocks(filtered);
+    if (sourceWarehouse) {
+      // Seçilen depodaki ve miktarı sıfırdan büyük olan stokları filtrele
+      const filtered = stocks.filter(stock => 
+        stock.depo_id === sourceWarehouse && stock.miktar > 0
+      );
+      setAvailableStocks(filtered);
       setSelectedStock(''); // Stok seçimini sıfırla
       setSelectedStockData(null);
+      
+      // Eğer hedef depo, kaynak depo ile aynıysa, hedef depoyu sıfırla
+      if (destinationWarehouse === sourceWarehouse) {
+        setDestinationWarehouse('');
+        setDestinationWarehouseData(null);
+      }
     } else {
-      setFilteredStocks([]);
+      setAvailableStocks([]);
     }
-  }, [selectedWarehouse, stocks]);
+  }, [sourceWarehouse, stocks]);
   
-  // Seçili müşteriyi izle
+  // Seçili kaynak depoyu izle
   useEffect(() => {
-    if (selectedCustomer) {
-      const customer = customers.find(c => c.id === selectedCustomer);
-      setSelectedCustomerData(customer || null);
+    if (sourceWarehouse) {
+      const warehouse = warehouses.find(w => w.id === sourceWarehouse);
+      setSourceWarehouseData(warehouse || null);
     } else {
-      setSelectedCustomerData(null);
+      setSourceWarehouseData(null);
     }
-  }, [selectedCustomer, customers]);
+  }, [sourceWarehouse, warehouses]);
   
-  // Seçili depoyu izle
+  // Seçili hedef depoyu izle
   useEffect(() => {
-    if (selectedWarehouse) {
-      const warehouse = warehouses.find(w => w.id === selectedWarehouse);
-      setSelectedWarehouseData(warehouse || null);
+    if (destinationWarehouse) {
+      const warehouse = warehouses.find(w => w.id === destinationWarehouse);
+      setDestinationWarehouseData(warehouse || null);
     } else {
-      setSelectedWarehouseData(null);
+      setDestinationWarehouseData(null);
     }
-  }, [selectedWarehouse, warehouses]);
+  }, [destinationWarehouse, warehouses]);
   
   // Seçili stoku izle
   useEffect(() => {
     if (selectedStock) {
-      const stock = filteredStocks.find(s => s.id === selectedStock);
+      const stock = availableStocks.find(s => s.id === selectedStock);
       setSelectedStockData(stock || null);
     } else {
       setSelectedStockData(null);
     }
-  }, [selectedStock, filteredStocks]);
+  }, [selectedStock, availableStocks]);
   
   // Form doğrulama
   const validateForm = () => {
-    if (!selectedCustomer) {
-      Alert.alert("Hata", "Lütfen bir müşteri seçin.");
+    if (!sourceWarehouse) {
+      Alert.alert("Hata", "Lütfen bir kaynak depo seçin.");
       return false;
     }
     
-    if (!selectedWarehouse) {
-      Alert.alert("Hata", "Lütfen bir depo seçin.");
+    if (!destinationWarehouse) {
+      Alert.alert("Hata", "Lütfen bir hedef depo seçin.");
+      return false;
+    }
+    
+    if (sourceWarehouse === destinationWarehouse) {
+      Alert.alert("Hata", "Kaynak ve hedef depo aynı olamaz.");
       return false;
     }
     
@@ -223,67 +210,138 @@ export default function AddProductExitScreen() {
     return true;
   };
   
-  // Ürün çıkışı kaydetme
-  const handleSaveExit = async () => {
+  // Stok transferini kaydet
+  const handleSaveTransfer = async () => {
     if (!validateForm()) return;
     
     try {
       setSaving(true);
       
-      // Stok hareketini kaydet
+      // Gerekli referansları al
+      const sourceStockRef = doc(db, "Stoklar", selectedStock);
+      
+      // Kaynak stok dokümanını al
+      const sourceStockDoc = await getDoc(sourceStockRef);
+      if (!sourceStockDoc.exists()) {
+        Alert.alert("Hata", "Seçilen stok artık mevcut değil.");
+        setSaving(false);
+        return;
+      }
+      
+      const currentSourceStock = sourceStockDoc.data();
+      const transferQuantity = Number(quantity);
+      const remainingSourceStock = currentSourceStock.miktar - transferQuantity;
+      
+      // Hedef depodaki aynı ürünü bul (varsa)
+      const targetStocksQuery = query(
+        collection(db, "Stoklar"), 
+        where("firma_id", "==", userData?.firma_id),
+        where("depo_id", "==", destinationWarehouse),
+        where("urun_adi", "==", currentSourceStock.urun_adi),
+        where("birim", "==", currentSourceStock.birim)
+      );
+      
+      const targetStocksSnapshot = await getDocs(targetStocksQuery);
+      let targetStockRef;
+      let newTargetQuantity;
+      let existingTargetStock = false;
+      let currentTargetStock = { miktar: 0 };
+            
+      if (!targetStocksSnapshot.empty) {
+      // Hedef depoda bu ürün var, miktarını arttır
+      const targetStockDoc = targetStocksSnapshot.docs[0];
+      targetStockRef = doc(db, "Stoklar", targetStockDoc.id);
+      currentTargetStock = targetStockDoc.data() as Stock;
+      newTargetQuantity = currentTargetStock.miktar + transferQuantity;
+      existingTargetStock = true;
+      } else {
+        // Hedef depoda bu ürün yok, yeni oluştur
+        targetStockRef = doc(collection(db, "Stoklar"));
+        newTargetQuantity = transferQuantity;
+      }
+      
+      // Firestore işlemlerini başlat
       const stockMovementRef = collection(db, "Stok_Hareketleri");
-      const stockRef = doc(db, "Stoklar", selectedStock);
       
-      // Kalan stok miktarını hesapla
-      const currentStock = selectedStockData!.miktar;
-      const exitQuantity = Number(quantity);
-      const remainingStock = currentStock - exitQuantity;
-      
-      // Stok hareketini ekle
-      const movementDoc = await addDoc(stockMovementRef, {
+      // 1. Kaynak depodan çıkış hareketi
+      const sourceMovementDoc = await addDoc(stockMovementRef, {
         tarih: serverTimestamp(),
-        islem_turu: "ürün_çıkışı",
-        aciklama: description || `${selectedStockData!.urun_adi} ürün çıkışı`,
-        miktar: exitQuantity,
-        sonuc_miktar: remainingStock,
+        islem_turu: "transfer", // Standartlaştırılmış değer
+        aciklama: `${currentSourceStock.urun_adi} ürünü ${sourceWarehouseData?.depo_adi} deposundan ${destinationWarehouseData?.depo_adi} deposuna transfer (Çıkış)`,
+        miktar: -transferQuantity, // Eksi değer (çıkış olduğu için)
+        sonuc_miktar: remainingSourceStock,
         stok_id: selectedStock,
-        depo_id: selectedWarehouse,
+        depo_id: sourceWarehouse,
         firma_id: userData?.firma_id,
-        kaynak_id: selectedCustomer // Müşteri ID'si
+        kaynak_id: destinationWarehouse // Hedef depo bilgisi için kaynak_id kullanılıyor
       });
       
-      // Stok miktarını güncelle
-      await updateDoc(stockRef, {
-        miktar: remainingStock
+      // 2. Hedef depoya giriş hareketi
+      const targetMovementDoc = await addDoc(stockMovementRef, {
+        tarih: serverTimestamp(),
+        islem_turu: "transfer", // Standartlaştırılmış değer
+        aciklama: `${currentSourceStock.urun_adi} ürünü ${sourceWarehouseData?.depo_adi} deposundan ${destinationWarehouseData?.depo_adi} deposuna transfer (Giriş)`,
+        miktar: transferQuantity, // Artı değer (giriş olduğu için)
+        sonuc_miktar: newTargetQuantity,
+        stok_id: existingTargetStock ? targetStockRef.id : null,
+        depo_id: destinationWarehouse,
+        firma_id: userData?.firma_id,
+        kaynak_id: sourceWarehouse // Kaynak depo bilgisi için kaynak_id kullanılıyor
       });
       
-      // Eylemler tablosuna kaydet
+      // 3. Kaynak depodaki stok miktarını azalt
+      await updateDoc(sourceStockRef, {
+        miktar: remainingSourceStock
+      });
+      
+      // 4. Hedef depodaki stok miktarını arttır (veya yeni oluştur)
+      if (existingTargetStock) {
+        await updateDoc(targetStockRef, {
+          miktar: newTargetQuantity
+        });
+      } else {
+        // Yeni stok oluşturma - setDoc kullanıyoruz (updateDoc yerine)
+        await setDoc(targetStockRef, {
+          urun_adi: currentSourceStock.urun_adi,
+          birim: currentSourceStock.birim,
+          miktar: newTargetQuantity,
+          depo_id: destinationWarehouse,
+          firma_id: userData?.firma_id
+        });
+        
+        // Yeni stok belgesinin ID'sini hedef stok hareketine ekle
+        await updateDoc(doc(stockMovementRef, targetMovementDoc.id), {
+          stok_id: targetStockRef.id
+        });
+      }
+      
+      // 5. Eylemler tablosuna kaydet
       const eylemlerRef = collection(db, "Eylemler");
       await addDoc(eylemlerRef, {
         eylem_tarihi: serverTimestamp(),
-        eylem_aciklamasi: `"${selectedStockData!.urun_adi}" ürününden ${exitQuantity} ${selectedStockData!.birim} "${selectedCustomerData!.sirket_ismi}" müşterisine çıkışı yapıldı.`,
+        eylem_aciklamasi: `"${currentSourceStock.urun_adi}" ürününden ${transferQuantity} ${currentSourceStock.birim} "${sourceWarehouseData!.depo_adi}" deposundan "${destinationWarehouseData!.depo_adi}" deposuna transfer edildi.`,
         kullanici_id: currentUser?.uid,
         kullanici_adi: userData?.isim + ' ' + userData?.soyisim,
         firma_id: userData?.firma_id,
-        islem_turu: "urun_cikisi",
-        ilgili_belge_id: movementDoc.id
+        islem_turu: "stok_transferi",
+        ilgili_belge_id: sourceMovementDoc.id
       });
       
       // Başarılı mesajı göster
       Alert.alert(
         "Başarılı",
-        `"${selectedStockData!.urun_adi}" ürününden ${exitQuantity} ${selectedStockData!.birim} çıkışı başarıyla kaydedildi.`,
+        `"${currentSourceStock.urun_adi}" ürününden ${transferQuantity} ${currentSourceStock.birim} başarıyla transfer edildi.`,
         [
           { 
             text: "Tamam", 
-            onPress: () => router.push('/product-exit-success')
+            onPress: () => router.push('/transfer-success')
           }
         ]
       );
       
     } catch (error) {
-      console.error("Ürün çıkışı kaydederken hata:", error);
-      Alert.alert("Hata", "Ürün çıkışı kaydedilirken bir hata oluştu.");
+      console.error("Stok transferi kaydederken hata:", error);
+      Alert.alert("Hata", "Stok transferi kaydedilirken bir hata oluştu.");
     } finally {
       setSaving(false);
     }
@@ -303,7 +361,7 @@ export default function AddProductExitScreen() {
       <View style={[styles.container, styles.centerContent]}>
         <Feather name="alert-circle" size={50} color="#FF6B6B" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => router.replace('/product-exit')}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => router.replace('/menu')}>
           <Text style={styles.retryButtonText}>Geri Dön</Text>
         </TouchableOpacity>
       </View>
@@ -319,7 +377,7 @@ export default function AddProductExitScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#222222" />
           </TouchableOpacity>
-          <Text style={styles.screenTitle}>Yeni Ürün Çıkışı</Text>
+          <Text style={styles.screenTitle}>Depolar Arası Transfer</Text>
         </View>
 
         <KeyboardAvoidingView
@@ -327,37 +385,16 @@ export default function AddProductExitScreen() {
           style={styles.formContainer}
         >
           <ScrollView style={styles.scrollView}>
-            {/* Müşteri Seçimi */}
+            {/* Kaynak Depo Seçimi */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Müşteri Seçin</Text>
+              <Text style={styles.label}>Kaynak Depo</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-                  selectedValue={selectedCustomer}
-                  onValueChange={(itemValue) => setSelectedCustomer(itemValue)}
+                  selectedValue={sourceWarehouse}
+                  onValueChange={(itemValue) => setSourceWarehouse(itemValue)}
                   style={styles.picker}
                 >
-                  <Picker.Item label="Müşteri seçin" value="" color="#AAAAAA" />
-                  {customers.map((customer) => (
-                    <Picker.Item 
-                      key={customer.id} 
-                      label={customer.sirket_ismi} 
-                      value={customer.id} 
-                    />
-                  ))}
-                </Picker>
-              </View>
-            </View>
-
-            {/* Depo Seçimi */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Çıkış Yapılacak Depo</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={selectedWarehouse}
-                  onValueChange={(itemValue) => setSelectedWarehouse(itemValue)}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Depo seçin" value="" color="#AAAAAA" />
+                  <Picker.Item label="Kaynak depo seçin" value="" color="#AAAAAA" />
                   {warehouses.map((warehouse) => (
                     <Picker.Item 
                       key={warehouse.id} 
@@ -371,20 +408,20 @@ export default function AddProductExitScreen() {
 
             {/* Stok Seçimi */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Çıkış Yapılacak Ürün</Text>
+              <Text style={styles.label}>Transfer Edilecek Ürün</Text>
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={selectedStock}
                   onValueChange={(itemValue) => setSelectedStock(itemValue)}
                   style={styles.picker}
-                  enabled={filteredStocks.length > 0}
+                  enabled={availableStocks.length > 0}
                 >
                   <Picker.Item 
-                    label={filteredStocks.length > 0 ? "Ürün seçin" : "Önce depo seçin"} 
+                    label={availableStocks.length > 0 ? "Ürün seçin" : "Önce kaynak depo seçin"} 
                     value="" 
                     color="#AAAAAA" 
                   />
-                  {filteredStocks.map((stock) => (
+                  {availableStocks.map((stock) => (
                     <Picker.Item 
                       key={stock.id} 
                       label={`${stock.urun_adi} (${stock.miktar} ${stock.birim})`} 
@@ -395,17 +432,41 @@ export default function AddProductExitScreen() {
               </View>
             </View>
 
+            {/* Hedef Depo Seçimi */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Hedef Depo</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={destinationWarehouse}
+                  onValueChange={(itemValue) => setDestinationWarehouse(itemValue)}
+                  style={styles.picker}
+                  enabled={sourceWarehouse !== ''}
+                >
+                  <Picker.Item label="Hedef depo seçin" value="" color="#AAAAAA" />
+                  {warehouses
+                    .filter(warehouse => warehouse.id !== sourceWarehouse) // Kaynak depoyu hariç tut
+                    .map((warehouse) => (
+                      <Picker.Item 
+                        key={warehouse.id} 
+                        label={warehouse.depo_adi} 
+                        value={warehouse.id} 
+                      />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
             {/* Miktar Girişi */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>
-                Çıkış Miktarı 
-                {selectedStockData ? ` (Stok: ${selectedStockData.miktar} ${selectedStockData.birim})` : ''}
+                Transfer Miktarı 
+                {selectedStockData ? ` (Mevcut: ${selectedStockData.miktar} ${selectedStockData.birim})` : ''}
               </Text>
               <TextInput
                 style={styles.input}
                 value={quantity}
                 onChangeText={setQuantity}
-                placeholder="Çıkış miktarını girin"
+                placeholder="Transfer miktarını girin"
                 placeholderTextColor="#AAAAAA"
                 keyboardType="numeric"
               />
@@ -418,7 +479,7 @@ export default function AddProductExitScreen() {
                 style={[styles.input, styles.textArea]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Ürün çıkışı ile ilgili açıklama girin (isteğe bağlı)"
+                placeholder="Transfer ile ilgili açıklama girin (isteğe bağlı)"
                 placeholderTextColor="#AAAAAA"
                 multiline
                 numberOfLines={4}
@@ -427,21 +488,21 @@ export default function AddProductExitScreen() {
             </View>
 
             {/* Özet - Seçilenler */}
-            {(selectedCustomerData || selectedWarehouseData || selectedStockData) && (
+            {(sourceWarehouseData || destinationWarehouseData || selectedStockData) && (
               <View style={styles.summaryContainer}>
                 <Text style={styles.summaryTitle}>Özet Bilgiler</Text>
                 
-                {selectedCustomerData && (
+                {sourceWarehouseData && (
                   <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Müşteri:</Text>
-                    <Text style={styles.summaryValue}>{selectedCustomerData.sirket_ismi}</Text>
+                    <Text style={styles.summaryLabel}>Kaynak Depo:</Text>
+                    <Text style={styles.summaryValue}>{sourceWarehouseData.depo_adi}</Text>
                   </View>
                 )}
                 
-                {selectedWarehouseData && (
+                {destinationWarehouseData && (
                   <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Depo:</Text>
-                    <Text style={styles.summaryValue}>{selectedWarehouseData.depo_adi}</Text>
+                    <Text style={styles.summaryLabel}>Hedef Depo:</Text>
+                    <Text style={styles.summaryValue}>{destinationWarehouseData.depo_adi}</Text>
                   </View>
                 )}
                 
@@ -455,13 +516,13 @@ export default function AddProductExitScreen() {
                 {(selectedStockData && quantity && !isNaN(Number(quantity))) && (
                   <>
                     <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Çıkış Miktarı:</Text>
+                      <Text style={styles.summaryLabel}>Transfer Miktarı:</Text>
                       <Text style={styles.summaryValue}>
                         {quantity} {selectedStockData.birim}
                       </Text>
                     </View>
                     <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>İşlem Sonrası Kalan:</Text>
+                      <Text style={styles.summaryLabel}>Kaynakta Kalan:</Text>
                       <Text style={styles.summaryValue}>
                         {Math.max(0, selectedStockData.miktar - Number(quantity))} {selectedStockData.birim}
                       </Text>
@@ -474,13 +535,13 @@ export default function AddProductExitScreen() {
             {/* Kaydetme Butonu */}
             <TouchableOpacity
               style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-              onPress={handleSaveExit}
+              onPress={handleSaveTransfer}
               disabled={saving}
             >
               {saving ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.saveButtonText}>Ürün Çıkışını Kaydet</Text>
+                <Text style={styles.saveButtonText}>Transferi Kaydet</Text>
               )}
             </TouchableOpacity>
           </ScrollView>

@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { onAuthChange, auth, logout } from '../firebase/auth'; // auth'u burada import edin
+import { onAuthChange, auth } from '../firebase/auth';
+import { signOut } from 'firebase/auth'; // Direkt import edin
 import { collection, query, where, getDocs, setDoc, doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from '../firebase/config';
 import { onIdTokenChanged } from 'firebase/auth';
@@ -22,10 +23,18 @@ export function AuthProvider({ children }) {
       console.log("Auth state changed, user:", user ? user.email : "null");
       
       if (user) {
-        // Kullanıcı bilgilerini her zaman ayarla, emailVerified kontrolü yapmadan
+        // Kullanıcı bilgilerini her zaman ayarla
         setCurrentUser(user);
         setEmailVerified(user.emailVerified);
-        await fetchAndUpdateUserData(user);
+        const success = await fetchAndUpdateUserData(user);
+        
+        // Önceki UX sorununu çöz
+        if (success) {
+          console.log("Kullanıcı bilgileri başarıyla güncellendi");
+        } else {
+          console.log("Kullanıcı bilgileri güncellenemedi");
+          // Çıkış yapma mesajını kaldırın veya değiştirin
+        }
       } else {
         // Kullanıcı çıkış yaptı
         setCurrentUser(null);
@@ -61,76 +70,41 @@ export function AuthProvider({ children }) {
   // Kullanıcı verilerini yükleme (onAuthChange tarafından çağrılır)
   const fetchAndUpdateUserData = async (user) => {
     try {
-      console.log("Güncel kullanıcı (Auth State):", { // Log mesajını netleştirelim
+      console.log("Güncel kullanıcı (Auth State):", {
         uid: user?.uid,
         email: user?.email
       });
 
-      if (!user || !user.uid) { // UID kontrolü daha güvenli
+      if (!user || !user.uid) {
         console.log("Kullanıcı UID bilgisi eksik, veri alınamıyor");
-        setUserData(null); // Veri alınamıyorsa userData'yı temizle
+        setUserData(null);
         setIsAdmin(false);
-        return; // return false yerine sadece return
+        return false;
       }
 
-      // Firestore'dan UID ile veri çek
+      // Firestore'dan kullanıcı belgesini al
       const userDocRef = doc(db, "Kullanicilar", user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
       if (userDocSnap.exists()) {
-        const userDataFromFirestore = userDocSnap.data(); // Yeni değişken ismi
-        console.log("Kullanıcı UID ile bulundu (Auth State)", userDataFromFirestore);
-
-        // Context'i güncelle
+        const userDataFromFirestore = userDocSnap.data();
         setUserData(userDataFromFirestore);
         setIsAdmin(userDataFromFirestore.yetki_id === "admin");
-
-        // --- BURAYA TAŞINAN GÜNCELLEME KONTROLÜ ---
-        try {
-          // Kullanıcı durumunu Firebase'den yeniden yükle
-          await user.reload();
-          const refreshedUser = auth.currentUser;
-
-          // Kontrol edilecek değerleri logla
-          console.log("E-posta güncelleme kontrolü (Auth State):", {
-            authEmail: refreshedUser?.email,
-            firestoreEmail: userDataFromFirestore?.eposta, // Doğru userData değişkenini kullan
-            isVerified: refreshedUser?.emailVerified
-          });
-
-          // Firestore'u güncelleme kontrolü
-          if (refreshedUser && userDataFromFirestore && refreshedUser.email !== userDataFromFirestore.eposta && refreshedUser.emailVerified) {
-            console.log(`Auth e-postası (${refreshedUser.email}) Firestore e-posta alanından (${userDataFromFirestore.eposta}) farklı ve DOĞRULANMIŞ. Firestore güncelleniyor (Auth State)...`);
-            try {
-              // userDocRef zaten yukarıda tanımlı, tekrar kullanabiliriz
-              await updateDoc(userDocRef, {
-                eposta: refreshedUser.email
-              });
-              // Context'teki userData'yı da hemen güncelle
-              setUserData(prevData => ({ ...prevData, eposta: refreshedUser.email }));
-              console.log("Firestore e-posta alanı güncellendi (Auth State).");
-            } catch (updateError) {
-              console.error("Firestore e-posta güncellenirken hata (Auth State):", updateError);
-            }
-          }
-        } catch (reloadError) {
-          console.error("Kullanıcı durumu yeniden yüklenirken hata (Auth State):", reloadError);
-        }
-        // --- KONTROL SONU ---
-
+        
         // Önbellekte sakla
         await AsyncStorage.setItem('userData', JSON.stringify(userDataFromFirestore));
-
+        
+        console.log("Kullanıcı bilgileri başarıyla güncellendi");
+        return true;
       } else {
-        console.log("Kullanıcı UID ile Firestore'da bulunamadı (Auth State)");
-        setUserData(null); // Kullanıcı Firestore'da yoksa temizle
-        setIsAdmin(false);
-        // İsteğe bağlı: E-posta ile tekrar deneme burada da yapılabilir ama UID olmalı.
+        console.log("Kullanıcı UID ile Firestore'da bulunamadı");
+        // Burada otomatik çıkış YAP-MA-MA-LI-YIZ
+        // Sadece bilgilendirme yeterli
+        return false;
       }
     } catch (error) {
-      console.error("Kullanıcı verisi alınırken hata oluştu (Auth State):", error);
-      setUserData(null); // Hata durumunda temizle
-      setIsAdmin(false);
+      console.error("Kullanıcı verisi alınırken hata:", error);
+      return false;
     }
   }; // fetchAndUpdateUserData fonksiyonunun sonu
 
@@ -266,13 +240,16 @@ export function AuthProvider({ children }) {
 
   const handleLogout = async () => {
     try {
-      // Firebase Auth'tan çıkış yap
-      await logout();
+      console.log("Logout işlemi başlatıldı...");
       
-      // AsyncStorage'dan kullanıcı verilerini temizle
+      // Önce AsyncStorage ve state'i temizle
       await AsyncStorage.removeItem('userData');
       
-      // Context durumunu sıfırla
+      // Firebase'den çıkış yap
+      await signOut(auth);
+      console.log("Firebase auth'tan çıkış yapıldı");
+      
+      // State'i sonra temizle
       setCurrentUser(null);
       setUserData(null);
       setIsAdmin(false);
@@ -280,8 +257,8 @@ export function AuthProvider({ children }) {
       
       return true;
     } catch (error) {
-      console.error("Logout error:", error);
-      return false;
+      console.error("Logout hatası:", error);
+      throw error; // Throw error to handle it in the component
     }
   };
 

@@ -1,18 +1,61 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 export default function UserHomeScreen() {
-  const { isAdmin, currentUser, logout } = useAuth();
+  const { isAdmin, currentUser, userData, logout } = useAuth();
+  const [loading, setLoading] = useState(false);
   
   const handleLogout = async () => {
     try {
-      await logout();
+      setLoading(true);
+      console.log("Logout işlemi başladı...");
+      
+      // Önce çıkış kaydı oluştur (şu anda oturum açıkken)
+      try {
+        if (currentUser?.uid) {
+          const timestamp = new Date().getTime();
+          const randomId = Math.random().toString(36).substring(2, 10);
+          const uniqueId = `${timestamp}_${randomId}`;
+          
+          const logoutRecordRef = doc(db, "Giris_Kayitlari", uniqueId);
+          await setDoc(logoutRecordRef, {
+            eylem_tarihi: new Date(),
+            eylem_turu: "çıkış",
+            durumu: "başarılı",
+            kullanici_id: currentUser.uid,
+            firma_id: userData?.firma_id || '',
+          });
+          console.log("Çıkış kaydı oluşturuldu");
+        }
+      } catch (logError) {
+        console.error("Çıkış kaydı oluşturulurken hata:", logError);
+      }
+      
+      // AuthContext'teki logout fonksiyonunu çağır ve hatayı yakala
+      try {
+        const result = await logout();
+        console.log("AuthContext logout sonucu:", result);
+      } catch (logoutError) {
+        console.error("Auth logout hatası:", logoutError);
+      }
+      
+      // Her durumda login sayfasına yönlendir
       router.replace('/login');
+      
+      setTimeout(() => {
+        setLoading(false);
+      }, 500);
+      
     } catch (error) {
       console.error("Logout error:", error);
+      Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
+      setLoading(false);
     }
   };
   
@@ -28,8 +71,16 @@ export default function UserHomeScreen() {
               <Feather name="bell" size={24} color="#666666" />
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
-              <Feather name="power" size={24} color="#666666" />
+            <TouchableOpacity 
+              style={styles.iconButton} 
+              onPress={handleLogout}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#666666" />
+              ) : (
+                <Feather name="power" size={24} color="#666666" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -106,7 +157,7 @@ export default function UserHomeScreen() {
           
           <View style={styles.gridRow}>
             <TouchableOpacity 
-              style={styles.gridCard}
+              style={[styles.gridCard, styles.fullWidthCard]}  // fullWidthCard stili eklendi
               onPress={() => router.push('/warehouses')}
             >
               <View style={styles.cardContent}>
@@ -115,8 +166,7 @@ export default function UserHomeScreen() {
               </View>
             </TouchableOpacity>
             
-            {/* Boş kart veya ileride eklenecek başka bir modül için yer tutucu */}
-            <View style={styles.gridCard}></View>
+            {/* Boş kart kaldırıldı */}
           </View>
         </View>
         

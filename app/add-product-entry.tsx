@@ -407,11 +407,10 @@ export default function AddProductEntryScreen() {
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#222222" />
-          </TouchableOpacity>
-          <Text style={styles.screenTitle}>Yeni Ürün Girişi</Text>
-          <View style={{width: 40}}></View> {/* Balance için boş view */}
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={24} color="#222222" />
+            </TouchableOpacity>
+            <Text style={styles.screenTitle}>Yeni Ürün Girişi</Text>
         </View>
 
         <KeyboardAvoidingView
@@ -704,6 +703,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#222222',
+    flex: 1,
+    textAlign: 'center',
+    marginRight: 40, // Geri butonu ile dengelemek için sağdan margin
   },
   formContainer: {
     flex: 1,

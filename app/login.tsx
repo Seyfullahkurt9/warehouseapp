@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, 
          SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { Svg, Path, Rect } from 'react-native-svg';
@@ -6,6 +6,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { loginWithEmail } from '../firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { FirebaseError } from 'firebase/app';
+import { serverTimestamp } from 'firebase/firestore';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -13,20 +17,71 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Hata", "E-posta ve şifre alanlarını doldurun.");
+      return;
+    }
+    
+    setLoading(true);
+    
     try {
+      // Giriş yap
       const { user, userData, isAdmin } = await loginWithEmail(email, password);
       
-      // AsyncStorage'ı güncelle
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      
-      // Yönlendirme
-      if (isAdmin) {
-        router.replace('/admin-home');
-      } else {
-        router.replace('/home');
+      try {
+        // Başarılı giriş kaydı ekle - timeout kullanmadan direkt ekle
+        const timestamp = new Date().getTime();
+        const randomId = Math.random().toString(36).substring(2, 10);
+        const uniqueId = `${timestamp}_${randomId}`;
+        
+        const girisKayitRef = doc(db, "Giris_Kayitlari", uniqueId);
+        
+        // Türkiye saati oluştur (UTC+3)
+        const now = new Date();
+        // Saat dilimi farkını ekle (UTC+3)
+        const turkeyTime = new Date(now.getTime() + (3 * 60 * 60 * 1000));
+
+        // Firestore'a kayıt ekle
+        await setDoc(girisKayitRef, {
+          eylem_tarihi: serverTimestamp(),  // Let Firestore handle the timestamp
+          eylem_turu: "giriş",
+          durumu: "başarılı",
+          kullanici_id: user.uid,
+          firma_id: userData?.firma_id || '',
+        });
+        
+        console.log("Başarılı giriş kaydı oluşturuldu:", uniqueId);
+        
+        // AsyncStorage'a kaydet
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        
+        // Yönlendirme yap
+        if (isAdmin) {
+          router.replace('/admin-home');
+        } else {
+          router.replace('/home');
+        }
+        
+      } catch (logError) {
+        console.error("Giriş kaydı eklenirken hata:", logError);
+        // Kayıt hatası olsa bile, giriş işlemi başarılı olduğu için yine de yönlendir
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+        if (isAdmin) {
+          router.replace('/admin-home');
+        } else {
+          router.replace('/home');
+        }
       }
     } catch (error) {
-      // Hata yönetimi
+      // Sadece konsola loglama yap, kullanıcı arayüzünde hiç hata gösterme
+      console.log("Giriş başarısız, hata:", error);
+      
+      // Alert kısmını tamamen kaldırıyoruz
+      // if (error instanceof FirebaseError) {
+      //   Alert.alert("Giriş Başarısız", errorMessage);
+      // }
+    } finally {
+      setLoading(false);
     }
   };
 

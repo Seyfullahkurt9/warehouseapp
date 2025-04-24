@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -6,66 +6,124 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   StatusBar,
-  ScrollView,
-  FlatList
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { useAuth } from '../context/AuthContext';
+
+// Giriş kaydı için tip tanımı
+interface LoginRecord {
+  id: string;
+  eylem_tarihi: any; // Firestore timestamp
+  eylem_turu: string;
+  durumu: string;
+  kullanici_id: string;
+  firma_id: string;
+}
 
 export default function LoginHistoryScreen() {
-  // Sample login history data
-  const loginHistory = [
-    {
-      id: '1',
-      dateTime: '13.04.2025 - 09:45',
-      status: 'success',
-    },
-    {
-      id: '2',
-      dateTime: '12.04.2025 - 18:22',
-      status: 'success',
-    },
-    {
-      id: '3',
-      dateTime: '11.04.2025 - 14:10',
-      status: 'failed',
-    },
-    {
-      id: '4',
-      dateTime: '10.04.2025 - 08:55',
-      status: 'success',
-    },
-    {
-      id: '5',
-      dateTime: '09.04.2025 - 16:33',
-      status: 'failed',
-    },
-    {
-      id: '6',
-      dateTime: '08.04.2025 - 10:15',
-      status: 'success',
-    },
-    {
-      id: '7',
-      dateTime: '07.04.2025 - 19:47',
-      status: 'success',
-    },
-    {
-      id: '8',
-      dateTime: '06.04.2025 - 11:30',
-      status: 'failed',
-    },
-  ];
+  const { currentUser, userData } = useAuth();
+  const [loginHistory, setLoginHistory] = useState<LoginRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Render individual login history item
-  const renderLoginItem = ({ item }) => (
+  useEffect(() => {
+    const fetchLoginHistory = async () => {
+      try {
+        if (!currentUser) {
+          setError("Kullanıcı bilgisi bulunamadı");
+          setLoading(false);
+          return;
+        }
+
+        // Firestore'dan kullanıcının giriş kayıtlarını getir
+        const loginHistoryRef = collection(db, "Giris_Kayitlari");
+        const q = query(
+          loginHistoryRef,
+          where("kullanici_id", "==", currentUser.uid),
+          orderBy("eylem_tarihi", "desc") // En son giriş en üstte
+        );
+
+        const querySnapshot = await getDocs(q);
+        const historyData: LoginRecord[] = [];
+        
+        querySnapshot.forEach((doc) => {
+          historyData.push({
+            id: doc.id,
+            ...doc.data()
+          } as LoginRecord);
+        });
+
+        setLoginHistory(historyData);
+        setLoading(false);
+      } catch (error) {
+        console.error("Giriş geçmişi yüklenirken hata:", error);
+        setError("Giriş bilgileri yüklenirken bir hata oluştu.");
+        setLoading(false);
+      }
+    };
+
+    fetchLoginHistory();
+  }, [currentUser]);
+
+  // Tarih formatla
+  const formatDate = (dateObject: any): string => {
+    if (!dateObject) return '-';
+    
+    try {
+      const date = dateObject.toDate ? dateObject.toDate() : new Date(dateObject);
+      
+      // Gün.Ay.Yıl - Saat:Dakika formatında
+      return date.toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).replace(',', ' -');
+    } catch (error) {
+      return '-';
+    }
+  };
+
+  // Giriş öğesi render fonksiyonu
+  const renderLoginItem = ({ item }: { item: LoginRecord }) => (
     <View style={styles.loginItem}>
-      <Text style={styles.dateTimeText}>{item.dateTime}</Text>
-      <Text style={item.status === 'success' ? styles.successText : styles.failedText}>
-        {item.status === 'success' ? 'Başarılı giriş' : 'Başarısız giriş'}
+      <Text style={styles.dateTimeText}>{formatDate(item.eylem_tarihi)}</Text>
+      <Text style={item.durumu === 'başarılı' ? styles.successText : styles.failedText}>
+        {item.durumu === 'başarılı' ? 'Başarılı giriş' : 'Başarısız giriş'}
       </Text>
     </View>
   );
+
+  // Yükleme durumu
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <StatusBar barStyle="dark-content" />
+        <ActivityIndicator size="large" color="#E6A05F" />
+        <Text style={styles.loadingText}>Giriş bilgileri yükleniyor...</Text>
+      </View>
+    );
+  }
+
+  // Hata durumu
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <StatusBar barStyle="dark-content" />
+        <Feather name="alert-circle" size={50} color="#FF6B6B" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+          <Text style={styles.retryButtonText}>Geri Dön</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -90,13 +148,20 @@ export default function LoginHistoryScreen() {
         </View>
 
         {/* Login History List */}
-        <FlatList
-          data={loginHistory}
-          renderItem={renderLoginItem}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-        />
+        {loginHistory.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Feather name="clock" size={50} color="#CCCCCC" />
+            <Text style={styles.emptyText}>Henüz giriş kaydı bulunmuyor</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={loginHistory}
+            renderItem={renderLoginItem}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
       </SafeAreaView>
     </View>
   );
@@ -106,6 +171,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F8F8',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666666',
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#FF6B6B',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#E6A05F',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   safeArea: {
     flex: 1,
@@ -151,6 +243,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
   },
   listContainer: {
     padding: 20,

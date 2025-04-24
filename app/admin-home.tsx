@@ -4,10 +4,6 @@ import { router } from 'expo-router';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 
 export default function AdminHomeScreen() {
-  const handleLogout = () => {
-    router.replace('/');
-  };
-
   const handleSwitchToUser = () => {
     router.replace('/home');
   };
@@ -25,16 +21,6 @@ export default function AdminHomeScreen() {
         <View style={styles.menuContainer}>
           <TouchableOpacity 
             style={styles.menuItem}
-            onPress={() => router.push('/profile')}
-          >
-            <View style={styles.menuItemContent}>
-              <Feather name="user" size={24} color="#666666" style={styles.menuIcon} />
-              <Text style={styles.menuText}>Bilgilerim</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.menuItem}
             onPress={() => router.push('/users')}
           >
             <View style={styles.menuItemContent}>
@@ -49,27 +35,33 @@ export default function AdminHomeScreen() {
           >
             <View style={styles.menuItemContent}>
               <Feather name="calendar" size={24} color="#666666" style={styles.menuIcon} />
-              <Text style={styles.menuText}>Son Giriş Bilgilerim</Text>
+              <Text style={styles.menuText}>Kullanıcı Son Giriş Bilgileri</Text>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => router.push('/company-info')}
+          >
             <View style={styles.menuItemContent}>
-              <MaterialIcons name="store" size={24} color="#666666" style={styles.menuIcon} />
-              <Text style={styles.menuText}>Depolar</Text>
+              <MaterialIcons name="business" size={24} color="#666666" style={styles.menuIcon} />
+              <Text style={styles.menuText}>Firma Bilgileri</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => router.push('/company-actions')}
+          >
+            <View style={styles.menuItemContent}>
+              <Feather name="activity" size={24} color="#666666" style={styles.menuIcon} />
+              <Text style={styles.menuText}>Firma Hareketleri</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Bottom Buttons */}
+        {/* Bottom Button */}
         <View style={styles.bottomButtonContainer}>
-          <View style={styles.buttonWrapper}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleLogout}>
-              <Feather name="chevron-left" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.buttonLabel}>Çıkış</Text>
-          </View>
-
           <View style={styles.buttonWrapper}>
             <TouchableOpacity style={styles.actionButton} onPress={handleSwitchToUser}>
               <Feather name="chevron-right" size={24} color="#FFFFFF" />
@@ -136,7 +128,7 @@ const styles = StyleSheet.create({
   },
   bottomButtonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 40,
     paddingBottom: 40,
   },
