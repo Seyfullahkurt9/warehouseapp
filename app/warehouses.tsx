@@ -226,6 +226,20 @@ export default function WarehousesScreen() {
     }
   };
   
+  // Depo stok durumu görüntüleme fonksiyonu
+  const handleViewStocks = (warehouseId: string, warehouseName: string) => {
+    router.push({
+      pathname: '/warehouse-stocks',
+      params: {
+        warehouseId: warehouseId,
+        warehouseName: warehouseName
+      }
+    });
+    
+    // Detay modalını kapat
+    setDetailModalVisible(false);
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
@@ -408,6 +422,14 @@ export default function WarehousesScreen() {
                     </View>
                   )}
                   
+                  {/* Stok Durumu Butonu */}
+                  <TouchableOpacity 
+                    style={styles.stockButton}
+                    onPress={() => handleViewStocks(selectedWarehouse.id, selectedWarehouse.depo_adi)}
+                  >
+                    <Text style={styles.stockButtonText}>Stok Durumu Göster</Text>
+                  </TouchableOpacity>
+
                   {/* Silme Butonu - Sadece admin için göster */}
                   {userData?.yetki_id === "admin" && (
                     <TouchableOpacity 
@@ -785,10 +807,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 14,
     marginTop: 16,
-    marginBottom: 16,
+    marginBottom: 10,
     alignItems: 'center',
   },
   deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  stockButton: {
+    backgroundColor: '#4A6FA5',
+    borderRadius: 8,
+    paddingVertical: 14,
+    marginTop: 16,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  stockButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',

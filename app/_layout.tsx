@@ -20,14 +20,13 @@ const isPublicPage = (path) => {
 const isAdminPage = (path) => {
   return path.startsWith('/admin-home') || 
          path.startsWith('/users') || 
-         path.startsWith('/login-history') ||
          // Diğer admin sayfaları
          false;
 };
 
-// Kullanıcının register sayfasına özel erişimine izin ver
+// Kullanıcının register ve verification sayfasına özel erişimine izin ver
 const isSpecialPublicPage = (path) => {
-  return path === '/register' || path === '/forgot-password';
+  return path === '/register' || path === '/forgot-password' || path === '/verification';
 };
 
 // Önce gerekli fonksiyonları ekleyelim
@@ -68,12 +67,11 @@ function AuthWrapper({ children }) {
 
     if (!currentUser) {
       // Kullanıcı giriş yapmamış (logged out)
-      // Eğer korunmuş bir sayfadaysa (public değil VE index değilse), login'e yönlendir
       if (!isPublicPage(currentPath) && currentPath !== '/') {
-         console.log(`AuthWrapper: Logged out user on protected page (${currentPath}), redirecting to /login`);
-         router.replace('/login');
+        console.log(`AuthWrapper: Logged out user on protected page (${currentPath}), redirecting to index page`);
+        router.replace('/'); // 👈 Değişiklik burada - login yerine ana sayfaya gönder
       } else {
-         console.log(`AuthWrapper: Logged out user on public page or index (${currentPath}), allowing navigation.`);
+        console.log(`AuthWrapper: Logged out user on public page or index (${currentPath}), allowing navigation.`);
       }
     } else {
       // Kullanıcı giriş yapmış (logged in)
@@ -160,6 +158,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="login" />
             <Stack.Screen name="register" />
+            <Stack.Screen name="email-verification" options={{ gestureEnabled: false }} />
             <Stack.Screen name="home" options={{ gestureEnabled: false }} />
             <Stack.Screen name="admin-home" options={{ gestureEnabled: false }} />
             <Stack.Screen name="orders" />

@@ -3,7 +3,6 @@ import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar, Aler
 import { router } from 'expo-router';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useFocusEffect } from '@react-navigation/native';
@@ -53,25 +52,17 @@ export default function HomeScreen() {
         }
       } catch (logError) {
         console.error("Çıkış kaydı oluşturulurken hata:", logError);
-        // Kayıt hatası olsa bile çıkışa devam et
       }
       
       // AuthContext'teki logout fonksiyonunu çağır
-      await logout(); // Bu fonksiyon state'i güncelleyecek
-      console.log("AuthContext logout tamamlandı.");
-      
-      // --- YÖNLENDİRMEYİ BURADAN KALDIRIN ---
-      // router.replace('/'); 
-      
-      // setLoading(false) muhtemelen gereksiz olacak çünkü AuthWrapper yönlendirecek
-      // setTimeout(() => {
-      //   setLoading(false);
-      // }, 500);
+      const success = await logout();
+      console.log("AuthContext logout tamamlandı:", success);
       
     } catch (error) {
       console.error("Logout error in component:", error);
       Alert.alert("Hata", "Çıkış yapılırken bir sorun oluştu.");
-      setLoading(false); // Hata durumunda loading'i kapat
+    } finally {
+      setLoading(false);
     }
   };
   

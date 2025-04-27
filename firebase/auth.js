@@ -10,7 +10,7 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { app } from './config';
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -30,37 +30,31 @@ export const registerUser = async (email, password) => {
   }
 };
 
-// Login with email and password and check user role
+// Simple login - only authentication
 export const loginWithEmail = async (email, password) => {
   try {
+    // Sadece kimlik doğrulama işlemi
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    
-    // Get user document from Firestore
-    const usersRef = collection(db, "Kullanicilar");
-    const q = query(usersRef, where("eposta", "==", email));
-    const querySnapshot = await getDocs(q);
-    
-    // Check if user exists in Firestore
-    if (!querySnapshot.empty) {
-      const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data();
-      
-      // Return user with additional data including role
-      return {
-        user: userCredential.user,
-        userData: userData,
-        isAdmin: userData.yetki_id === "admin"
-      };
-    } else {
-      // User authenticated but not found in Firestore
-      return {
-        user: userCredential.user,
-        userData: null,
-        isAdmin: false
-      };
-    }
+    return userCredential.user;
   } catch (error) {
     throw error;
+  }
+};
+
+// Get user data from Firestore
+export const getUserData = async (userId) => {
+  try {
+    const userDocRef = doc(db, "Kullanicilar", userId);
+    const userDocSnap = await getDoc(userDocRef);
+    
+    if (userDocSnap.exists()) {
+      return userDocSnap.data();
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error("Kullanıcı verisi alınırken hata:", error);
+    return null;
   }
 };
 

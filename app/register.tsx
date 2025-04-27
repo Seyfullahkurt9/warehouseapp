@@ -4,7 +4,7 @@ import { Svg, Path, Rect } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 // Import our custom modules
-import { registerUser } from '../firebase/auth';
+import { registerUser, logout } from '../firebase/auth'; // logout'u import edin
 import { createUserDocument, logUserAction } from '../firebase/firestore';
 import { collection, addDoc } from 'firebase/firestore'; // Firestore fonksiyonlarını import et
 import { db } from '../firebase/config'; // Firestore bağlantısını import et
@@ -72,6 +72,9 @@ export default function RegisterScreen() {
       }
       */
 
+      // Kayıt işlemi tamamlandıktan sonra çıkış yap
+      await logout();
+      
       // Redirect to verification page
       router.push('/verification');
       

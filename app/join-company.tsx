@@ -138,16 +138,25 @@ export default function JoinCompanyScreen() {
       
       // Kullanıcı bilgilerini güncelle
       const userRef = doc(db, "Kullanicilar", currentUser.uid);
+      const userSnap = await getDoc(userRef);
+      const currentUserData = userSnap.data();
+
       const userUpdates = {
+        // Mevcut bilgileri koru
+        isim: currentUserData?.isim || userData?.isim || "",
+        soyisim: currentUserData?.soyisim || userData?.soyisim || "",
+        telefon: currentUserData?.telefon || userData?.telefon || "",
+        eposta: currentUserData?.eposta || userData?.eposta || "",
+        // Yeni bilgileri ekle
         firma_id: verifiedCompany.id,
-        yetki_id: "kullanici",  // Standart kullanıcı yetkisi
+        yetki_id: "kullanici",
         is_unvani: isUnvani
       };
       
       // Firestore'da kullanıcıyı güncelle
       await updateDoc(userRef, userUpdates);
       
-      // Context'te kullanıcı bilgilerini güncelle
+      // Context'te kullanıcı bilgilerini güncelle (şimdi tüm bilgiler tam)
       await updateUserData({
         ...userData,
         ...userUpdates
