@@ -466,15 +466,13 @@ export default function ProductExitScreen() {
           />
         )}
 
-        {/* Floating Action Button - Admin için */}
-        {userData?.yetki_id === "admin" && (
-          <TouchableOpacity 
-            style={styles.fab}
-            onPress={() => router.push('/add-product-exit')}
-          >
-            <Ionicons name="add" size={30} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
+        {/* Floating Action Button - Tüm kullanıcılar için */}
+        <TouchableOpacity 
+          style={styles.fab}
+          onPress={() => router.push('/add-product-exit')}
+        >
+          <Ionicons name="add" size={30} color="#FFFFFF" />
+        </TouchableOpacity>
 
         {/* Bottom Tab Navigation */}
         <View style={styles.tabBarContainer}>

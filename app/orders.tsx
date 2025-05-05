@@ -564,13 +564,25 @@ export default function OrdersScreen() {
                       <Text style={styles.detailValue}>{selectedOrder?.aciklama || '-'}</Text>
                     </View>
                     
-                    {/* Durumu güncelleme butonu */}
-                    <TouchableOpacity
-                      style={styles.updateStatusButton}
-                      onPress={() => setStatusModalVisible(true)}
-                    >
-                      <Text style={styles.updateStatusButtonText}>Sipariş Durumunu Güncelle</Text>
-                    </TouchableOpacity>
+                    {/* Durumu güncelleme butonu - Tamamlandı durumunda gizle */}
+                    {selectedOrder?.durum !== 'Tamamlandı' && (
+                      <TouchableOpacity
+                        style={styles.updateStatusButton}
+                        onPress={() => setStatusModalVisible(true)}
+                      >
+                        <Text style={styles.updateStatusButtonText}>Sipariş Durumunu Güncelle</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Tamamlandı durumundaysa bir bilgi mesajı göster */}
+                    {selectedOrder?.durum === 'Tamamlandı' && (
+                      <View style={styles.completedInfoContainer}>
+                        <Feather name="info" size={20} color="#4CAF50" />
+                        <Text style={styles.completedInfoText}>
+                          Bu sipariş tamamlanmıştır ve durumu değiştirilemez.
+                        </Text>
+                      </View>
+                    )}
                     
                     {/* Silme butonu - Sadece admin için göster */}
                     {userData?.yetki_id === "admin" && (
@@ -670,49 +682,99 @@ export default function OrdersScreen() {
               </View>
               
               <View style={styles.statusOptions}>
-                <TouchableOpacity 
-                  style={styles.statusOption}
-                  onPress={() => updateOrderStatus('Beklemede')}
-                  disabled={statusUpdateLoading}
-                >
-                  <View style={[styles.statusIconContainer, { backgroundColor: '#F0B252' }]}>
-                    <MaterialIcons name="hourglass-empty" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.statusOptionText}>Beklemede</Text>
-                </TouchableOpacity>
+                {/* Mevcut durum "Beklemede" ise sadece "Onaylandı" ve "Reddedildi" göster */}
+                {selectedOrder?.durum === 'Beklemede' && (
+                  <>
+                    <TouchableOpacity 
+                      style={styles.statusOption}
+                      onPress={() => updateOrderStatus('Onaylandı')}
+                      disabled={statusUpdateLoading}
+                    >
+                      <View style={[styles.statusIconContainer, { backgroundColor: '#52B4F0' }]}>
+                        <Feather name="check" size={24} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.statusOptionText}>Siparişi Onayla</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.statusOption}
+                      onPress={() => updateOrderStatus('Reddedildi')}
+                      disabled={statusUpdateLoading}
+                    >
+                      <View style={[styles.statusIconContainer, { backgroundColor: '#F44336' }]}>
+                        <Feather name="x" size={24} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.statusOptionText}>Siparişi Reddet</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Mevcut durum "Onaylandı" ise sadece "Beklemede" ve "Tamamlandı" göster */}
+                {selectedOrder?.durum === 'Onaylandı' && (
+                  <>
+                    <TouchableOpacity 
+                      style={styles.statusOption}
+                      onPress={() => updateOrderStatus('Beklemede')}
+                      disabled={statusUpdateLoading}
+                    >
+                      <View style={[styles.statusIconContainer, { backgroundColor: '#F0B252' }]}>
+                        <MaterialIcons name="hourglass-empty" size={24} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.statusOptionText}>Siparişi Beklemeye Al</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.statusOption}
+                      onPress={() => {
+                        // Sipariş durumunu güncellemek yerine product-exit sayfasına yönlendir
+                        if (selectedOrder && orderDetails?.musteri) {
+                          // Gerekli parametreleri router.push ile gönder
+                          router.push({
+                            pathname: '/add-product-exit',
+                            params: { 
+                              customerId: selectedOrder.musteri_id,
+                              orderId: selectedOrder.id,
+                              fromOrder: 'true'
+                            }
+                          });
+                          setStatusModalVisible(false); // Modalı kapat
+                        } else {
+                          Alert.alert("Hata", "Müşteri bilgisi bulunamadı.");
+                        }
+                      }}
+                      disabled={statusUpdateLoading}
+                    >
+                      <View style={[styles.statusIconContainer, { backgroundColor: '#4CAF50' }]}>
+                        <Feather name="check-circle" size={24} color="#FFFFFF" />
+                      </View>
+                      <Text style={styles.statusOptionText}>Ürün Çıkışı Yap</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Mevcut durum "Reddedildi" ise sadece "Beklemede" göster */}
+                {selectedOrder?.durum === 'Reddedildi' && (
+                  <TouchableOpacity 
+                    style={styles.statusOption}
+                    onPress={() => updateOrderStatus('Beklemede')}
+                    disabled={statusUpdateLoading}
+                  >
+                    <View style={[styles.statusIconContainer, { backgroundColor: '#F0B252' }]}>
+                      <MaterialIcons name="hourglass-empty" size={24} color="#FFFFFF" />
+                    </View>
+                    <Text style={styles.statusOptionText}>Siparişi Beklemeye Al</Text>
+                  </TouchableOpacity>
+                )}
                 
-                <TouchableOpacity 
-                  style={styles.statusOption}
-                  onPress={() => updateOrderStatus('Onaylandı')}
-                  disabled={statusUpdateLoading}
-                >
-                  <View style={[styles.statusIconContainer, { backgroundColor: '#52B4F0' }]}>
-                    <Feather name="check" size={24} color="#FFFFFF" />
+                {/* Tamamlandı durumunda bir mesaj göster */}
+                {selectedOrder?.durum === 'Tamamlandı' && (
+                  <View style={styles.completedMessageContainer}>
+                    <Feather name="check-circle" size={50} color="#4CAF50" />
+                    <Text style={styles.completedMessageText}>
+                      Tamamlanmış siparişin durumu değiştirilemez.
+                    </Text>
                   </View>
-                  <Text style={styles.statusOptionText}>Onaylandı</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.statusOption}
-                  onPress={() => updateOrderStatus('Tamamlandı')}
-                  disabled={statusUpdateLoading}
-                >
-                  <View style={[styles.statusIconContainer, { backgroundColor: '#4CAF50' }]}>
-                    <Feather name="check-circle" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.statusOptionText}>Tamamlandı</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.statusOption}
-                  onPress={() => updateOrderStatus('Reddedildi')}
-                  disabled={statusUpdateLoading}
-                >
-                  <View style={[styles.statusIconContainer, { backgroundColor: '#F44336' }]}>
-                    <Feather name="x" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.statusOptionText}>Reddedildi</Text>
-                </TouchableOpacity>
+                )}
               </View>
               
               {statusUpdateLoading && (
@@ -1234,7 +1296,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   statusOption: {
-    width: '45%',
+    width: '48%',
     backgroundColor: '#F8F8F8',
     borderRadius: 8,
     padding: 16,
@@ -1254,6 +1316,7 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontWeight: '500',
     marginTop: 6,
+    textAlign: 'center',
   },
   statusUpdateLoading: {
     marginTop: 10,
@@ -1348,5 +1411,29 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  completedMessageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  completedMessageText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  completedInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    marginTop: 16,
+    borderRadius: 8,
+  },
+  completedInfoText: {
+    marginLeft: 8,
+    color: '#2E7D32',
+    fontSize: 14,
   },
 });

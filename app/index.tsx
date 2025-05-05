@@ -1,9 +1,13 @@
-import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator } from 'react-native';
 import { Svg, Path, Rect } from 'react-native-svg';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, logout } from '../firebase/auth'; // Burada değişiklik
 
 export default function HomeScreen() {
+  const [loading, setLoading] = useState(false);
+
   // Original function to navigate based on user type (kept but commented)
   const navigateToLogin = (userType: 'user' | 'admin') => {
     router.push({
@@ -15,6 +19,33 @@ export default function HomeScreen() {
   // Simplified navigation to login page
   const handleLogin = () => {
     router.push('/login');
+  };
+
+  // Dev test için logout işlemi
+  const handleDevLogout = async () => {
+    try {
+      setLoading(true);
+      console.log("DEV TEST: Logout işlemi başlatılıyor...");
+      
+      // AsyncStorage temizle
+      await AsyncStorage.clear();
+      console.log("DEV TEST: AsyncStorage temizlendi");
+      
+      // Firebase logout - logout fonksiyonunu kullan
+      try {
+        await logout(); // signOut(auth) yerine logout() kullanın
+        console.log("DEV TEST: Firebase auth oturumu kapatıldı");
+      } catch (firebaseError) {
+        console.error("DEV TEST: Firebase çıkış hatası:", firebaseError);
+      }
+      
+      Alert.alert("Başarılı", "Tüm oturum verileri temizlendi");
+    } catch (error) {
+      console.error("DEV TEST: Logout hatası:", error);
+      Alert.alert("Hata", "İşlem sırasında bir sorun oluştu");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,23 +90,6 @@ export default function HomeScreen() {
           <Text style={styles.buttonText}>Giriş</Text>
         </TouchableOpacity>
         
-        {/* Original buttons (commented out) */}
-        {/*
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={() => navigateToLogin('user')}
-        >
-          <Text style={styles.buttonText}>Kullanıcı Giriş</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={() => navigateToLogin('admin')}
-        >
-          <Text style={styles.buttonText}>Admin Giriş</Text>
-        </TouchableOpacity>
-        */}
-        
         <TouchableOpacity onPress={() => router.push('/register')}>
           <Text style={styles.linkText}>Yeni bir hesap oluştur</Text>
         </TouchableOpacity>
@@ -114,6 +128,15 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#E6A05F',
+    width: '85%',
+    height: 50,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  devButton: {
+    backgroundColor: '#FF6B6B',
     width: '85%',
     height: 50,
     borderRadius: 8,
